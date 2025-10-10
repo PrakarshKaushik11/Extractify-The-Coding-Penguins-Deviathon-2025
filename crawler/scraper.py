@@ -1,122 +1,124 @@
 # crawler/scraper.py
 from __future__ import annotations
 
+import json
 import re
-import urllib.parse
+import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Set, List, Optional
+from typing import Iterable, Set, Dict, Any, List
+from urllib.parse import urljoin, urlparse, urldefrag
 
 import requests
 from bs4 import BeautifulSoup
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Connection": "keep-alive",
-}
-FETCH_TIMEOUT = 15
 
 @dataclass
 class Page:
     url: str
+    title: str
     text: str
 
-@dataclass
-class CrawlResult:
-    pages: List[Page]
-    visited: List[str]
 
-def _same_domain(base: str, link: str) -> bool:
-    try:
-        b = urllib.parse.urlparse(base)
-        l = urllib.parse.urlparse(link)
-        return (b.scheme, b.netloc) == (l.scheme, l.netloc)
-    except Exception:
-        return False
+def _same_host(u: str, root: str) -> bool:
+    pu, pr = urlparse(u), urlparse(root)
+    return pu.netloc == pr.netloc
 
-def _abs_url(base: str, href: str) -> Optional[str]:
-    if not href:
-        return None
-    try:
-        url = urllib.parse.urljoin(base, href)
-        u = urllib.parse.urlparse(url)
-        if u.scheme not in ("http", "https"):
-            return None
-        return urllib.parse.urlunparse((u.scheme, u.netloc, u.path, "", u.query, ""))
-    except Exception:
-        return None
 
-NON_VISIBLE = {"script","style","noscript","footer","header","nav"}
+def _normalize(u: str) -> str:
+    # drop fragments and normalize trailing slashes
+    u, _ = urldefrag(u)
+    if u.endswith("/index.html"):
+        u = u[: -len("/index.html")]
+    return u.rstrip("/")
 
-def extract_clean_text(html: str) -> str:
+
+def _extract_links(html: str, base_url: str) -> Set[str]:
     soup = BeautifulSoup(html, "html.parser")
-    for t in soup(NON_VISIBLE):
-        t.decompose()
-    chunks = []
-    for el in soup.find_all(["h1","h2","h3","h4","h5","p","li","span","div","a"]):
-        txt = el.get_text(" ", strip=True)
-        if not txt:
+    links = set()
+    for a in soup.find_all("a", href=True):
+        href = a.get("href").strip()
+        if not href:
             continue
-        if len(txt) < 2:
+        if href.startswith("javascript:") or href.startswith("mailto:"):
             continue
-        if txt.lower() in ("home","read more","learn more","menu"):
-            continue
-        chunks.append(txt)
-    text = " ".join(chunks)
-    return re.sub(r"\s+", " ", text).strip()
+        full = _normalize(urljoin(base_url, href))
+        links.add(full)
+    return links
 
-ALUMNI_HINT_LINK = ("alumni","convocation","placement","career","graduates","success")
 
-def crawl_domain(start_url: str, max_pages: int = 150, max_depth: int = 2) -> CrawlResult:
-    """Focused crawler that biases alumni-like links. Returns Page(text,url)."""
-    visited: Set[str] = set()
+def _clean_text(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    text = soup.get_text(separator=" ", strip=True)
+    # collapse whitespace
+    return re.sub(r"\s+", " ", text)
+
+
+def _fetch(session: requests.Session, url: str, timeout: int = 15) -> requests.Response | None:
+    try:
+        r = session.get(url, timeout=timeout, headers={"User-Agent": "TheCodingPenguinsBot/1.0"})
+        if r.status_code == 200 and "text/html" in r.headers.get("Content-Type", ""):
+            return r
+        return None
+    except requests.RequestException:
+        return None
+
+
+def crawl_domain(
+    domain: str,
+    keywords: List[str],
+    max_pages: int,
+    max_depth: int,
+    out_path: str,
+) -> Dict[str, Any]:
+    """
+    Breadth-first crawl restricted to the same host. Saves JSONL lines with:
+    {"url": ..., "title": ..., "text": ...}
+    """
+    start = time.time()
+    root = _normalize(domain)
+    seen: Set[str] = set()
+    q = deque([(root, 0)])
     pages: List[Page] = []
 
-    start = urllib.parse.urlparse(start_url)
-    base = f"{start.scheme}://{start.netloc}"
+    session = requests.Session()
 
-    frontier: deque = deque()
-    frontier.append((start_url, 0))
-
-    while frontier and len(pages) < max_pages:
-        url, depth = frontier.popleft()
-        if url in visited:
+    while q and len(pages) < max_pages:
+        url, depth = q.popleft()
+        if url in seen:
             continue
-        visited.add(url)
+        seen.add(url)
 
-        try:
-            r = requests.get(url, headers=HEADERS, timeout=FETCH_TIMEOUT)
-            r.raise_for_status()
-            ctype = r.headers.get("Content-Type","")
-            if "text/html" not in ctype and "application/xhtml+xml" not in ctype:
-                continue
-            html = r.text
-        except Exception:
+        resp = _fetch(session, url)
+        if not resp:
             continue
 
-        text = extract_clean_text(html)
-        pages.append(Page(url=url, text=text))
-
-        if depth >= max_depth:
-            continue
-
+        html = resp.text
         soup = BeautifulSoup(html, "html.parser")
-        for a in soup.find_all("a", href=True):
-            u = _abs_url(url, a.get("href"))
-            if not u:
-                continue
-            if not _same_domain(base, u):
-                continue
-            if u in visited:
-                continue
-            hl = u.lower()
-            if any(s in hl for s in ALUMNI_HINT_LINK):
-                frontier.appendleft((u, depth + 1))
-            else:
-                frontier.append((u, depth + 1))
+        title = soup.title.get_text(strip=True) if soup.title else ""
+        text = _clean_text(html)
 
-    return CrawlResult(pages=pages, visited=list(visited))
+        pages.append(Page(url=url, title=title, text=text))
 
-__all__ = ["crawl_domain", "extract_clean_text", "Page", "CrawlResult"]
+        if depth < max_depth:
+            for link in _extract_links(html, url):
+                if _same_host(link, root) and link not in seen:
+                    q.append((link, depth + 1))
+
+    # write JSONL
+    out_lines = 0
+    with open(out_path, "w", encoding="utf-8") as f:
+        for p in pages:
+            f.write(json.dumps({"url": p.url, "title": p.title, "text": p.text}, ensure_ascii=False) + "\n")
+            out_lines += 1
+
+    elapsed = round(time.time() - start, 2)
+    return {
+        "domain": root,
+        "pages_scanned": len(pages),
+        "sample_urls": [p.url for p in pages[:5]],
+        "elapsed": elapsed,
+        "used_fallback": 0,
+    }
