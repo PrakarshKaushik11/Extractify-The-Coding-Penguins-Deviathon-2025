@@ -1,102 +1,124 @@
 # extractor/nlp_pipeline.py
-import argparse, json
-from pathlib import Path
+from __future__ import annotations
+
+import re
+from typing import Dict, List, Any
+
 import spacy
-from spacy.matcher import PhraseMatcher
 
-# local import (works whether run as script or module)
-try:
-    from . import rules
-except ImportError:
-    import rules  # fallback when run as a script directly
+# Load once
+_NLP = spacy.load("en_core_web_sm")
 
-def ensure_model(name: str = "en_core_web_sm"):
-    """Load spaCy model; download if missing."""
-    try:
-        return spacy.load(name)
-    except OSError:
-        from spacy.cli import download
-        download(name)
-        return spacy.load(name)
+# Alumni cues (for small boosts / fallbacks)
+from extractor.type_filters import ALUMNI_HINTS, DEGREE_RE, YEAR_RE
 
-def load_pages(path: str):
-    """Yield page records from JSONL (one JSON per line)."""
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                yield json.loads(line)
+TITLE_WORDS = [
+    "attorney general","assistant attorney general","solicitor general","minister","secretary",
+    "judge","justice","director","dean","registrar","professor","associate professor",
+    "assistant professor","lecturer","chancellor","vice chancellor","hod","head of department",
+]
 
-def build_title_matcher(nlp):
-    """Create a phrase matcher for designations (case-insensitive)."""
-    matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
-    patterns = [nlp.make_doc(p) for p in rules.TITLE_PATTERNS]
-    matcher.add("TITLE", patterns)
-    return matcher
+def _rule_score(text: str, keywords: List[str]) -> float:
+    score = 0.45
+    low = text.lower()
+    for k in keywords or []:
+        if k and k.lower() in low:
+            score += 0.1
+    score = min(0.95, score)
+    return score
 
-def _link_person_to_nearest_title(doc, title_spans, keyword_hit: bool):
-    results = []
-    persons = [ent for ent in doc.ents if ent.label_ == "PERSON"]
-    for p in persons:
-        nearest, dist = None, 10**9
-        for t in title_spans:
-            d = abs(t.start - p.start)
-            if d < dist:
-                dist, nearest = d, t
-        if nearest:
-            # base confidence: closer = better; keyword gives small boost
-            base = 0.6 + (0.3 * (1.0 / (1 + dist)))
-            if keyword_hit:
-                base += 0.1
-            conf = max(0.0, min(1.0, base))
-            results.append((p.text, nearest.text, round(conf, 2)))
-    return results
+def _boost_by_alumni(text: str) -> float:
+    if ALUMNI_HINTS.search(text):
+        return 0.25
+    if DEGREE_RE.search(text) and YEAR_RE.search(text):
+        return 0.20
+    return 0.0
 
-def process_page(nlp, matcher, page, keywords):
-    text = page.get("text") or ""
-    if not text.strip():
-        return []
-    doc = nlp(text)
-    matches = matcher(doc)
-    title_spans = [doc[s:e] for _, s, e in matches]
-    keyword_hit = any(k.lower() in text.lower() for k in keywords) if keywords else False
+def _best_title_span(text: str) -> str:
+    low = text.lower()
+    for t in TITLE_WORDS:
+        if t in low:
+            return t.title()
+    return ""
 
-    linked = _link_person_to_nearest_title(doc, title_spans, keyword_hit)
-    out = []
-    for name, title, conf in linked:
-        out.append({
-            "name": name,
-            "type": "PERSON",
-            "designation": title,
-            "url": page.get("url"),
-            "context": page.get("title"),
-            "confidence": conf,
-            "found_by": ["spacy_ner", "title_matcher"]
-        })
-    return out
+def extract_entities_from_texts(pages: List[Dict[str, str]], keywords: List[str]) -> List[Dict[str, Any]]:
+    """NER + rule-based title/keyword matcher + alumni fallback."""
+    out: List[Dict[str, Any]] = []
 
-def run(input_path: str, out_path: str, keywords: list[str]):
-    """Public entrypoint used by API and CLI."""
-    nlp = ensure_model()
-    matcher = build_title_matcher(nlp)
-
-    entities = []
-    pages = list(load_pages(input_path))
     for page in pages:
-        entities.extend(process_page(nlp, matcher, page, keywords))
+        url = page.get("url")
+        raw = page.get("text","")
+        if not raw:
+            continue
 
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"entities": entities}, f, ensure_ascii=False, indent=2)
-    print(f"[NLP] Pages: {len(pages)} | Entities: {len(entities)} | Saved: {out_path}")
+        # 1) spaCy NER
+        doc = _NLP(raw)
+        for ent in doc.ents:
+            if ent.label_ == "PERSON" and 2 <= len(ent.text.split()) <= 5:
+                snip_start = max(0, ent.start_char - 120)
+                snip_end = min(len(raw), ent.end_char + 120)
+                snippet = raw[snip_start:snip_end]
+                title = _best_title_span(snippet)
+                score = _rule_score(snippet, keywords)
+                score += _boost_by_alumni(snippet)
+                out.append({
+                    "name": ent.text.strip(),
+                    "title": title or "Person",
+                    "org": None,
+                    "context_url": url,
+                    "snippet": snippet.strip(),
+                    "score": round(min(0.99, score), 3),
+                })
 
-def _cli():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--input", required=True, help="Path to data/pages.jsonl")
-    ap.add_argument("--out", default="data/entities.json")
-    ap.add_argument("--keywords", default="")
-    args = ap.parse_args()
-    keywords = [k.strip() for k in args.keywords.split(",") if k.strip()]
-    run(args.input, args.out, keywords)
+        # 2) Title-first extraction (when names are not tagged)
+        for t in TITLE_WORDS:
+            if t in raw.lower():
+                # naive capture up to 6 tokens before title as a name-like phrase
+                pattern = re.compile(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,5})[^\.]{0,50}" + re.escape(t), re.I)
+                for m in pattern.finditer(raw):
+                    name = m.group(1).strip()
+                    snippet = raw[max(0, m.start()-120):m.end()+120]
+                    score = 0.55 + _boost_by_alumni(snippet)
+                    out.append({
+                        "name": name,
+                        "title": t.title(),
+                        "org": None,
+                        "context_url": url,
+                        "snippet": snippet.strip(),
+                        "score": round(min(0.99, score), 3),
+                    })
 
-if __name__ == "__main__":
-    _cli()
+        # 3) Alumni fallback (div/card-heavy pages)
+        # Names followed by batch/class or degree+year
+        pattern = re.compile(
+            r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b(?:[^\.]{0,50}(?:Batch\s*of|Class\s*of)\s*(19|20)\d{2})?",
+            re.M
+        )
+        for m in pattern.finditer(raw):
+            name = m.group(1).strip()
+            if len(name.split()) < 2 or name.isupper():
+                continue
+            snippet = raw[max(0, m.start()-80):m.end()+80]
+            if not (ALUMNI_HINTS.search(snippet) or (DEGREE_RE.search(snippet) and YEAR_RE.search(snippet))):
+                continue
+            score = 0.60 + _boost_by_alumni(snippet)
+            out.append({
+                "name": name,
+                "title": "Alumni",
+                "org": None,
+                "context_url": url,
+                "snippet": snippet.strip(),
+                "score": round(min(0.99, score), 3),
+            })
+
+    # light dedupe by (name, url)
+    seen = set()
+    deduped = []
+    for e in out:
+        key = (e.get("name"), e.get("context_url"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(e)
+
+    return deduped

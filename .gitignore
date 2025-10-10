@@ -3,24 +3,33 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.log
 
 # Virtual environment
 .venv/
 env/
 venv/
 
-# Data and local cache
-data/*.json
-data/*.jsonl
-!.gitkeep
+# VSCode
+.vscode/
 
 # Streamlit
-.ui_cache/
 .streamlit/
+
+# Cache / build
+*.log
+*.sqlite3
+*.db
+*.csv
+*.json
+*.pkl
+*.bin
+*.gz
+*.zip
+*.tar
 
 # OS
 .DS_Store
 Thumbs.db
-.venv/
-.venv/
+
+# Environment files
+.env
