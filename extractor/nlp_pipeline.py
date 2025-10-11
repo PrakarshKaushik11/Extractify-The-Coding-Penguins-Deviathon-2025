@@ -4,239 +4,243 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import List, Dict, Any, Tuple, Optional
-from urllib.parse import urlparse
-from extractor.ai_enhance import enhance_entities
+from typing import List, Dict, Iterable
 
-
-# Local NER (no cloud)
+# ---------------- NLP setup ----------------
 import spacy
+
+# Load spaCy (download once if missing)
 try:
     nlp = spacy.load("en_core_web_sm")
-except OSError:
-    nlp = spacy.blank("en")
-    if "sentencizer" not in nlp.pipe_names:
-        nlp.add_pipe("sentencizer")
+except Exception:
+    from spacy.cli import download
+    download("en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
 
-from .rules import TITLE_PATTERNS
+# Optional: local semantic model (keeps you fully offline if already present)
+try:
+    from sentence_transformers import SentenceTransformer, util as st_util
+    _st_model = SentenceTransformer("all-MiniLM-L6-v2")
+except Exception:
+    _st_model = None
 
-# ---------- normalization & filters ----------
-NOISE_NAMES = [
-    "admission","apply now","contact us","careers","download",
-    "privacy","terms","campus course","course list",
-    "mathura campus","noida campus course","home","login","register"
-]
-ROLE_NORMALIZE = {
-    "Vice Chancellor": "Vice-Chancellor",
-    "Pro Vice Chancellor": "Pro Vice-Chancellor",
-    "Chief Justice": "Chief Justice",
-    "Judge": "Judge",
-    "Director": "Director",
-    "Registrar": "Registrar",
-    "Dean": "Dean",
-    "Professor": "Professor",
-}
 
-# Role whitelist buckets (expand as needed)
-ROLE_WHITELIST_BASE = {
-    "minister": {
-        "minister","prime minister","cabinet minister","union minister","minister of state","mos"
-    },
-    "judge": {
-        "judge","justice","chief justice","magistrate"
-    },
-    "secretary": {
-        "secretary","cabinet secretary","home secretary","health secretary","education secretary",
-        "principal secretary","joint secretary","additional secretary"
-    },
-}
-def build_role_whitelist(keywords: List[str]) -> set[str]:
-    wl: set[str] = set()
-    for k in (keywords or []):
-        wl |= {r for r in ROLE_WHITELIST_BASE.get(k.lower(), set())}
-    # If no keywords provided, allow all buckets
-    return wl or set().union(*ROLE_WHITELIST_BASE.values())
+# ---------------- utilities ----------------
+def _norm_text(s: str) -> str:
+    return " ".join((s or "").split())
 
-TITLE_RE = re.compile(r"|".join([re.escape(t) for t in TITLE_PATTERNS]), re.I)
-NAME_NEARBY_RE = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b")
+def _keywords_list(keywords: Iterable[str] | None) -> list[str]:
+    return [k.strip().lower() for k in (keywords or []) if k and k.strip()]
 
-def _noisy_name(s: Any) -> bool:
-    if not isinstance(s, str) or not s.strip():
-        return True
-    s2 = s.lower().strip()
-    return any(tok in s2 for tok in NOISE_NAMES)
-
-def _boilerplate_snippet(snippet: Any) -> bool:
-    if not isinstance(snippet, str):
-        return True
-    s = snippet.lower()
-    keys = ["admission","careers","contact us","select state","select branch"]
-    return sum(k in s for k in keys) >= 2
-
-def _fix_url(u: Optional[str]) -> Optional[str]:
-    if not isinstance(u, str) or not u.strip():
-        return None
-    u = u.strip()
-    if not re.match(r"^https?://", u):
-        u = "https://" + u.lstrip("/")
-    return u
-
-def _snippet_around(text: str, start: int, end: int, window: int = 240) -> str:
-    lo = max(0, start - window)
-    hi = min(len(text), end + window)
-    snip = text[lo:hi].strip()
-    return re.sub(r"\s+", " ", snip)
-
-def _normalize_role(x: Optional[str]) -> Optional[str]:
-    if not isinstance(x, str):
-        return None
-    x = x.strip()
-    return ROLE_NORMALIZE.get(x, x)
-
-def _is_personish(name: str) -> bool:
-    if not isinstance(name, str): 
-        return False
-    s = name.strip()
-    if len(s) < 3:
-        return False
-    # reject clearly generic tokens that crept in
-    bad = {"department","information","excellence","today","details","videos","programs","government services"}
-    if s.lower() in bad:
-        return False
-    # Simple heuristic: PascalCase tokens like "John Doe" up to 4 words
-    return bool(re.fullmatch(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}", s))
-
-def sanitize_entities(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _semantic_score(text: str, keywords: list[str]) -> float:
     """
-    Map fields (context_url→url, title→type), drop noise, require role, dedupe by (name,url).
+    0..1 similarity between a text and the provided keywords.
+    Uses SentenceTransformer if available; otherwise falls back to token overlap.
     """
-    cleaned: List[Dict[str, Any]] = []
-    seen = set()
-    for e in entities:
-        e["url"] = e.get("url") or e.get("context_url")
-        e["type"] = e.get("type") or e.get("title")
-        e["type"] = _normalize_role(e.get("type"))
-        e["url"] = _fix_url(e.get("url"))
+    if not text or not keywords:
+        return 0.0
+    if _st_model:
+        try:
+            t_emb = _st_model.encode([text], normalize_embeddings=True)
+            k_emb = _st_model.encode(["; ".join(keywords)], normalize_embeddings=True)
+            sim = float(st_util.cos_sim(t_emb, k_emb)[0][0])  # [-1, 1]
+            return max(0.0, min(1.0, (sim + 1.0) / 2.0))
+        except Exception:
+            pass
+    # Fallback
+    tset = set(_norm_text(text).lower().split())
+    kset = set(keywords)
+    return 0.0 if not tset or not kset else len(tset & kset) / max(1, len(kset))
 
-        if not e.get("type"):                   # must have a role
+def _window(text: str, start: int, end: int, radius: int = 240) -> str:
+    a = max(0, start - radius)
+    b = min(len(text), end + radius)
+    return text[a:b]
+
+
+# ------------- pattern helpers -------------
+# Title-like fragment near a name (Team cards, bios, etc.)
+TITLE_NEAR_RE = re.compile(
+    r"(?:^|[\s,;:\-\–\—\(\)\[\]\|])([A-Z][A-Za-z\-/& ]{2,40})",
+    flags=re.M
+)
+
+# Job/role phrases we want to catch anywhere in the nearby window
+JOB_TITLE_RE = re.compile(
+    r"\b("
+    r"(software|backend|front[- ]?end|full[- ]?stack|platform|data|ml|ai|security|cloud|mobile|android|ios)"
+    r"[ -]?(engineer|developer|specialist|architect|lead|manager|mentor|instructor|trainer)"
+    r"|product manager|engineering manager|tech( |\-)?lead|cto|ceo|founder|professor|research(er)?"
+    r")\b",
+    re.I,
+)
+
+ORG_HINT_RE = re.compile(r"\b(at|@|from|with)\s+([A-Z][A-Za-z0-9&\-\., ]{2,50})")
+
+
+def _nearest_org(doc: spacy.tokens.Doc, start_char: int, end_char: int) -> str | None:
+    nearest = None
+    nearest_dist = 10**9
+    for ent in doc.ents:
+        if ent.label_ != "ORG":
             continue
-        if _noisy_name(e.get("name")):
-            continue
-        if _boilerplate_snippet(e.get("snippet","")):
+        d = min(abs(ent.start_char - end_char), abs(start_char - ent.end_char))
+        if d < nearest_dist:
+            nearest_dist = d
+            nearest = ent.text
+    return nearest
+
+
+# -------- generic candidate extraction ------
+def _extract_candidates_from_page(page_text: str, page_url: str) -> list[dict]:
+    """
+    Build PERSON candidates with nearby title guess + org + rich snippet.
+    """
+    doc = nlp(page_text)
+    out: list[dict] = []
+
+    for ent in doc.ents:
+        if ent.label_ != "PERSON":
             continue
 
-        key = ((e.get("name") or "").strip().lower(), (e.get("url") or "").strip().lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned.append(e)
-    return cleaned
+        ctx = _window(page_text, ent.start_char, ent.end_char, radius=260)
 
-# ---------- pages loader ----------
-def _read_pages_jsonl(pages_path: str) -> List[Dict[str, Any]]:
-    pages: List[Dict[str, Any]] = []
-    with open(pages_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line: continue
-            try:
-                obj = json.loads(line)
-                if isinstance(obj, dict):
-                    pages.append(obj)
-            except json.JSONDecodeError:
-                pass
-    return pages
-
-# ---------- extraction core ----------
-def _extract_candidates_from_text(text: str) -> List[Tuple[str, Optional[str], int, int]]:
-    """
-    Returns (name, role, start_idx, end_idx)
-    """
-    cands: List[Tuple[str, Optional[str], int, int]] = []
-
-    # 1) Role patterns near capitalized names
-    for m in TITLE_RE.finditer(text):
-        role = m.group(0)
-        span_lo = max(0, m.start() - 220)
-        span_hi = min(len(text), m.end() + 220)
-        win = text[span_lo:span_hi]
-        nm = NAME_NEARBY_RE.search(win)
-        if nm:
-            name = nm.group(1)
-            name_abs_lo = span_lo + nm.start(1)
-            name_abs_hi = span_lo + nm.end(1)
-            cands.append((name, role, min(name_abs_lo, m.start()), max(name_abs_hi, m.end())))
+        # Title guess from nearby TitleCase or explicit job phrases
+        title_guess = None
+        m_job = JOB_TITLE_RE.search(ctx)
+        if m_job:
+            title_guess = m_job.group(0).strip()
         else:
-            # We’ll later require personish names; keep role-only for now
-            cands.append((role, None, m.start(), m.end()))
+            for m in TITLE_NEAR_RE.finditer(ctx):
+                frag = m.group(1).strip()
+                if ent.text in frag:
+                    continue
+                if 2 <= len(frag.split()) <= 7:
+                    title_guess = frag
+                    break
 
-    # 2) NER fallback/boost
-    if nlp.pipe_names:
-        doc = nlp(text[:800000])
-        for ent in doc.ents:
-            if ent.label_ in {"PERSON", "ORG"}:
-                cands.append((ent.text, None, ent.start_char, ent.end_char))
-    return cands
+        # Organization (spaCy ORG nearest or "at/@" pattern)
+        org_guess = _nearest_org(doc, ent.start_char, ent.end_char)
+        if not org_guess:
+            m_org = ORG_HINT_RE.search(ctx)
+            if m_org:
+                org_guess = m_org.group(2).strip()
 
-def _build_entities_for_page(page: Dict[str, Any], role_whitelist: set[str]) -> List[Dict[str, Any]]:
-    url = page.get("url") or ""
-    text = page.get("text") or ""
-    if not isinstance(text, str) or len(text) < 40:
-        return []
-    out: List[Dict[str, Any]] = []
-    for name, role, s, e in _extract_candidates_from_text(text):
-        # Must look like a person
-        if not _is_personish(name):
-            continue
-
-        # If a role was found, gate by whitelist
-        role_ok = True
-        if role is not None and role_whitelist:
-            role_ok = role.strip().lower() in role_whitelist
-        if not role_ok:
-            continue
+        snippet = ctx.strip()[:360]
 
         out.append({
-            "name": name.strip() if isinstance(name, str) else name,
-            "title": role.strip() if isinstance(role, str) else None,   # keep original key
-            "org": None,
-            "context_url": url,                                         # keep original key
-            "snippet": _snippet_around(text, s, e, window=240),
-            "score": 0.5,
-            "sem_score": None,
+            "name": ent.text.strip(),
+            "title": title_guess,
+            "org": org_guess,
+            "context_url": page_url,
+            "snippet": snippet,
+            "_features": {
+                "has_title": 1.0 if title_guess else 0.0,
+                "has_org": 1.0 if org_guess else 0.0,
+                "richness": min(1.0, len(ctx) / 450.0),
+            }
         })
     return out
 
-# ---------- public entry ----------
+
+# ----------------- scoring ------------------
+def _page_title_boost(url: str) -> float:
+    # cheap heuristic using URL path hints
+    return 0.15 if re.search(r"(team|people|staff|mentor|leadership|about|profile|careers)", url, re.I) else 0.0
+
+def _score_candidate(c: dict, keywords: list[str]) -> float:
+    """
+    Score (0..1) using:
+      - semantic similarity to keywords (if any)
+      - structural cues (title/org presence, snippet richness)
+      - small URL/section boost for team/people pages
+    """
+    title = c.get("title") or ""
+    snippet = c.get("snippet") or ""
+    url = c.get("context_url") or ""
+    text_for_sem = f"{title}. {snippet}".strip()
+
+    sem = _semantic_score(text_for_sem, keywords) if keywords else 0.0
+    feats = c.get("_features", {})
+    has_title = float(feats.get("has_title", 0.0))
+    has_org = float(feats.get("has_org", 0.0))
+    richness = float(feats.get("richness", 0.0))
+    url_boost = _page_title_boost(url)
+
+    if keywords:
+        score = 0.60 * sem + 0.20 * has_title + 0.10 * has_org + 0.10 * (richness + url_boost)
+    else:
+        score = 0.45 * has_title + 0.20 * has_org + 0.35 * (richness + url_boost)
+
+    return max(0.0, min(1.0, score))
+
+
+# ----------------- main API -----------------
 def extract_entities(
     pages_path: str,
     entities_path: str,
-    keywords: List[str],
+    keywords: List[str] | None = None,
     target: str = "auto",
-) -> Dict[str, Any]:
-    # 1) Load pages
-    pages = _read_pages_jsonl(pages_path)
+) -> Dict[str, object]:
+    """
+    Flexible extractor for any site + any keyword(s) (or none).
+    Reads JSONL from pages_path; writes JSON to entities_path.
+    """
+    kw = _keywords_list(keywords)
 
-    # 2) Generate broad raw candidates (your existing _build_entities_for_page)
-    raw: List[Dict[str, Any]] = []
+    # Read crawled pages
+    pages: list[dict] = []
+    with open(pages_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                pages.append(json.loads(line))
+            except Exception:
+                continue
+
+    # Build candidates and score
+    cands: list[dict] = []
     for p in pages:
-        raw.extend(_build_entities_for_page(p, role_whitelist=set()))  # pass empty; we won’t hard-limit
+        txt = p.get("text") or ""
+        url = p.get("url") or ""
+        if not txt:
+            continue
+        for c in _extract_candidates_from_page(txt, url):
+            c["_score"] = _score_candidate(c, kw)
+            cands.append(c)
 
-    # 3) AI enhancement (local only): infer types, smart snippets, semantic rerank, cluster-dedupe
-    entities = enhance_entities(pages, raw, keywords)
+    # De-duplicate by (name, title, url), keeping best
+    best: dict[tuple, dict] = {}
+    for c in cands:
+        key = (c["name"].lower(), (c.get("title") or "").lower(), c.get("context_url") or "")
+        if key not in best or c["_score"] > best[key]["_score"]:
+            best[key] = c
 
-    # 4) Write out
-    domain = ""
-    if pages:
-        try:
-            from urllib.parse import urlparse
-            domain = urlparse(pages[0].get("url", "")).netloc
-        except Exception:
-            pass
+    entities = [
+        {
+            "name": c["name"],
+            "type": c.get("title") or "Person",
+            "url": c.get("context_url"),
+            "snippet": c.get("snippet"),
+            "score": round(float(c["_score"]), 3),
+        }
+        for c in sorted(best.values(), key=lambda x: x["_score"], reverse=True)
+    ]
 
     os.makedirs(os.path.dirname(entities_path), exist_ok=True)
     with open(entities_path, "w", encoding="utf-8") as f:
         json.dump(entities, f, ensure_ascii=False, indent=2)
+
+    # infer domain
+    domain = ""
+    try:
+        from urllib.parse import urlparse
+        if pages:
+            domain = urlparse(pages[0].get("url", "")).netloc
+    except Exception:
+        pass
 
     return {
         "domain": f"https://{domain}" if domain else "",

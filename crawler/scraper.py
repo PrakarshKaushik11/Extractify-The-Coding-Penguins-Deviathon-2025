@@ -7,7 +7,7 @@ import time
 import logging
 from collections import deque
 from dataclasses import dataclass
-from typing import Iterable, Set, Dict, Any, List, Optional
+from typing import Set, Dict, Any, List, Optional
 from urllib.parse import urljoin, urlparse, urldefrag
 
 import requests
@@ -68,16 +68,14 @@ def _same_site(u: str, root: str) -> bool:
 
 def _extract_links(base_url: str, html: str) -> List[str]:
     soup = BeautifulSoup(html, "html.parser")
-    links = []
+    links: List[str] = []
     for a in soup.find_all("a"):
         href = a.get("href")
-        if not href: 
+        if not href:
             continue
-        if a.get("rel") and any(r.lower() == "nofollow" for r in a.get("rel")):
-            # keep internal links even if nofollow? safer: allow; here we skip
-            pass
         u = _normalize_url(base_url, href)
-        if u: links.append(u)
+        if u:
+            links.append(u)
     return links
 
 def _clean_text(html: str) -> str:
@@ -130,6 +128,12 @@ def _robots_allowed(root: str, url: str) -> bool:
     except Exception:
         return True
 
+# 🔎 Hints to PRIORITIZE likely people/roles pages (explore sooner, don’t hard filter)
+PRIORITY_HINTS = re.compile(
+    r"(team|people|staff|faculty|mentor|mentors|about|leadership|profile|instructor|directory|careers|jobs)",
+    re.I,
+)
+
 def crawl_domain(
     domain: str,
     keywords: List[str],
@@ -139,6 +143,7 @@ def crawl_domain(
 ) -> Dict[str, Any]:
     """
     BFS crawl inside a single domain. Writes JSONL lines: {"url","title","text"} to out_path.
+    Flexible: uses keywords to PRIORITIZE exploration (appendleft) instead of dropping links.
     """
     start = time.time()
     root = domain.rstrip("/")
@@ -148,6 +153,7 @@ def crawl_domain(
 
     session = _session_with_retries()
     delay = _delay_ms() / 1000.0
+    kw = [k.strip().lower() for k in (keywords or []) if k and k.strip()]
 
     while queue and len(pages) < max_pages:
         url, depth = queue.popleft()
@@ -178,27 +184,36 @@ def crawl_domain(
         text = _clean_text(html)
         pages.append(Page(url=url, title=title, text=text))
 
-        # simple keyword gate to avoid queue blowup
-        body_low = (title or "").lower() + " " + text[:4000].lower()
-        kw_ok = True if not keywords else any(k.strip().lower() in body_low for k in keywords if k.strip())
-        if kw_ok:
-            for link in _extract_links(url, html):
-                if link not in seen and _same_site(link, root):
-                    queue.append((link, depth + 1))
+        # ✅ PRIORITIZE relevant links; don't block exploration
+        body_low = ((title or "") + " " + text[:4000]).lower()
+        for link in _extract_links(url, html):
+            if link in seen or not _same_site(link, root):
+                continue
+
+            prioritized = False
+            if PRIORITY_HINTS.search(link):
+                prioritized = True
+            elif kw and any(k in link.lower() for k in kw):
+                prioritized = True
+            elif kw and any(k in body_low for k in kw):
+                prioritized = True
+
+            if prioritized:
+                queue.appendleft((link, depth + 1))   # explore sooner
+            else:
+                queue.append((link, depth + 1))
 
         if delay > 0:
             time.sleep(delay)
 
-        # soft stop if we are clearly not making progress
+        # soft stop if the site is a link farm
         if len(seen) > max_pages * 8:
             break
 
     # Write output
-    out_lines = 0
     with open(out_path, "w", encoding="utf-8") as f:
         for p in pages:
             f.write(json.dumps({"url": p.url, "title": p.title, "text": p.text}, ensure_ascii=False) + "\n")
-            out_lines += 1
 
     elapsed = round(time.time() - start, 2)
     LOG.info("Crawl done: %s pages, elapsed=%ss -> %s", len(pages), elapsed, out_path)

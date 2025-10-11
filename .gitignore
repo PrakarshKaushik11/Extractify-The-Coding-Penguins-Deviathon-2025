@@ -1,21 +1,28 @@
-# Node / React
-ui/node_modules/
-ui/.next/
-ui/.turbo/
-ui/dist/
-
-# Python
+# Python venv
 .venv/
 __pycache__/
 *.pyc
+*.pyo
 
-# Logs / Data
-*.log
-data/
-*.jsonl
+# Node modules (React)
+node_modules/
+ui/node_modules/
+ui/.next/
+ui/dist/
+build/
+npm-debug.log
 
-# OS / IDE
-.DS_Store
-Thumbs.db
+# Local data
+data/pages.jsonl
+data/entities.json
+data/*.jsonl
+data/*.json
+
+# IDE
 .vscode/
 .idea/
+.DS_Store
+
+# Environment / cache
+.env
+*.log
