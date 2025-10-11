@@ -1,222 +1,203 @@
-# 🧠 Automated Domain-Specific Entity Extraction and Information Structuring System  
-### by **Team The Coding Penguins 🐧** — Deviathon 2025  
 
-A local **AI-powered web intelligence system** that automatically crawls any website, extracts domain-specific entities, and structures them into meaningful insights — **without using cloud APIs**.  
-It combines **focused web crawling**, **NLP-based entity extraction**, and **semantic ranking**, visualized in an interactive **Streamlit dashboard**.  
+# 🐧 The Coding Penguins — Automated Domain-Specific Entity Extraction System
+
+> ⚡ Crawl → Extract → Understand any domain using local AI  
+> An **offline, intelligent information structuring system** that transforms unstructured web data into meaningful, organized knowledge.
+
+
 
 ---
 
-## 👨‍💻 Team
+## 🧠 Overview
 
-| Name | Role | Responsibilities |
-|------|------|------------------|
-| 🐧 **Prakarsh Kaushik** | Team Lead & Backend/NLP | FastAPI backend, NLP extractor, integration |
-| 🐧 **Om Upadhyay** | Web Crawler Developer | Focused crawler, domain parsing, data collection |
-| 🐧 **Pratiksha** | NLP & Entity Logic | spaCy tuning, rule-based and semantic extraction |
-| 🐧 **Priyanshu Gautam** | Frontend Developer | Streamlit UI, API integration, visualization |
+**The Coding Penguins** is a full-stack AI system built for **Deviathon 2025** that automatically crawls a web domain, extracts relevant entities (e.g., *Ministers, Judges, Officials, Professors*), and structures them into a clean dataset.
+
+It operates entirely offline using **local AI models (spaCy + rule-based + zero-shot)**, ensuring **privacy, speed, and reliability** — perfect for domain-specific knowledge discovery.
+
+---
+
+## ✨ Key Features
+
+| Feature | Description |
+|----------|--------------|
+| 🕷️ **Automated Web Crawling** | Intelligent breadth-first crawler with depth control and keyword filtering. |
+| 🧩 **AI-Powered Entity Extraction** | Hybrid NLP pipeline combining **spaCy**, regex, and zero-shot classification. |
+| 📊 **Structured Knowledge Output** | Clean JSON & visual display of extracted entities for analysis or export. |
+| ⚡ **Fast & Local** | Fully offline inference, no external APIs required. |
+| 🧠 **Real-Time UI** | Beautiful React dashboard for progress, stats, and results. |
+| 🔒 **Privacy-Friendly** | No data leaves your system — all AI models run locally. |
+
+---
+
+## 🏗️ Architecture
+
+```
+
+Frontend (React + Tailwind)
+│
+▼
+FastAPI Backend  ←→  NLP Extractor (spaCy + Regex + Zero-shot)
+│
+▼
+Crawler (Requests + BeautifulSoup)
+│
+▼
+SQLite / JSON Storage  ←→  UI Visualization
+
+````
 
 ---
 
 ## ⚙️ Tech Stack
 
-- **Language:** Python 3.12  
-- **Backend:** FastAPI  
-- **Frontend:** Streamlit  
-- **NLP Engine:** spaCy + Sentence Transformers (local semantic AI)  
-- **Crawler:** Requests + BeautifulSoup + Rule-based traversal  
-- **Ranking:** Hybrid model (BM25 + Semantic similarity)  
-- **Deployment:** Docker (optional)
+| Layer | Technology |
+|-------|-------------|
+| **Frontend** | React (Vite), Tailwind CSS, shadcn/ui, Framer Motion |
+| **Backend** | FastAPI, Uvicorn |
+| **NLP Engine** | spaCy 3.8, Regex, SentenceTransformer (Zero-shot) |
+| **Crawler** | BeautifulSoup, Requests |
+| **Database** | JSONL + SQLite (optional) |
+| **Deployment** | Local / Docker (optional) |
+| **Version Control** | Git + GitHub |
 
 ---
 
-## 🚀 Features
+## 🚀 Getting Started
 
-✅ Intelligent domain crawling with depth and page control  
-✅ AI-based entity extraction using local NLP and embeddings  
-✅ Flexible — works with *any* domain and keyword context  
-✅ Hybrid keyword + semantic ranking for accuracy  
-✅ Streamlit dashboard for user-friendly visualization  
-✅ 100% offline — no external LLM or cloud dependency  
-
----
-
-## 📁 Project Structure
-
-```text
-The Coding Penguins/
-│
-├── api/                      # FastAPI backend
-│   ├── main.py
-│   ├── schemas.py
-│   └── __init__.py
-│
-├── crawler/                  # Web crawler (Om)
-│   └── scraper.py
-│
-├── extractor/                # NLP & semantic extractor
-│   ├── nlp_pipeline.py
-│   └── __init__.py
-│
-├── ui/                       # Streamlit frontend
-│   └── app.py
-│
-├── data/                     # Sample crawled & extracted data
-│   ├── pages.jsonl
-│   └── entities.json
-│
-├── requirements.txt
-├── .gitignore
-└── README.md
+### 1️⃣ Clone the Repository
+```bash
+git clone https://github.com/<your-username>/the-coding-penguins.git
+cd the-coding-penguins
 ````
 
 ---
 
-## 🧠 How It Works
-
-1. **Crawl** → The crawler scans the domain and collects HTML/text content up to a defined depth and limit.
-2. **Extract** → The NLP pipeline identifies meaningful entities using spaCy, rule-based patterns, and semantic embedding similarity.
-3. **Rank** → Hybrid model using **BM25 + Sentence Transformers** ranks relevant entities by confidence.
-4. **Visualize** → Streamlit UI displays the extracted entities, scores, and snippets interactively.
-
----
-
-## 💻 Run Locally
-
-### 1️⃣ Clone and Setup
+### 2️⃣ Backend Setup (FastAPI)
 
 ```bash
-git clone https://github.com/PrakarshKaushik11/The-Coding-Penguins-Deviathon-2025.git
-cd The-Coding-Penguins-Deviathon-2025
+cd api
 python -m venv .venv
-
-# Activate the environment
-# Windows:
-.\.venv\Scripts\activate
-# macOS/Linux:
-# source .venv/bin/activate
-
+source .venv/bin/activate   # on Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -m spacy download en_core_web_sm
+uvicorn main:app --reload --port 8000
 ```
+
+Backend runs at:
+➡️ **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
 
 ---
 
-### 2️⃣ Start the Backend (FastAPI)
+### 3️⃣ Frontend Setup (React + Vite)
 
 ```bash
-set PYTHONPATH=%CD%
-python -m uvicorn api.main:app --reload --port 8000
+cd ui
+npm install
+npm run dev
 ```
 
-Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for Swagger API view.
+Frontend runs at:
+➡️ **[http://localhost:5173](http://localhost:5173)**
 
 ---
 
-### 3️⃣ Start the Frontend (Streamlit)
+### 4️⃣ Workflow
 
-In a new terminal window:
-
-```bash
-cd "D:\The Coding Penguins"
-.\.venv\Scripts\activate
-streamlit run ui/app.py
-```
-
-Then open [http://localhost:8501](http://localhost:8501).
+1. Open the UI
+2. Enter a **domain** (e.g. `https://www.justice.gov`)
+3. Set **crawl depth & max pages**
+4. Click **Start Crawl** → system crawls + extracts entities
+5. View **AI Extraction progress** → then view **Results**
 
 ---
 
-### 4️⃣ Try It!
+## 🧩 Core Files
 
-* Enter any domain, e.g. `https://www.gla.ac.in/alumni`
-* (Optional) Add keywords like `alumni, graduate, batch of, class of`
-* Enable **Semantic AI**
-* Click **Crawl & Extract**
-* View structured entities with scores and snippets.
-
----
-
-## 🧰 API Endpoints
-
-|  Method  | Endpoint             | Description                             |
-| :------: | :------------------- | :-------------------------------------- |
-|  **GET** | `/health`            | API health check                        |
-| **POST** | `/crawl`             | Crawl domain and return collected pages |
-| **POST** | `/crawl-and-extract` | Crawl + NLP + Semantic extraction       |
-|  **GET** | `/results`           | Return extracted entities JSON          |
+| Path                              | Description                                                  |
+| --------------------------------- | ------------------------------------------------------------ |
+| `/api/main.py`                    | FastAPI backend endpoints (`/crawl`, `/extract`, `/results`) |
+| `/crawler/scraper.py`             | Domain crawler with BFS, keyword-based link filtering        |
+| `/extractor/nlp_pipeline.py`      | spaCy + rule-based + transformer NLP extractor               |
+| `/ui/src/pages/CrawlSettings.tsx` | Crawl configuration screen                                   |
+| `/ui/src/pages/Extraction.tsx`    | Real-time AI extraction status                               |
+| `/ui/src/pages/Results.tsx`       | Entity result viewer with search & stats                     |
+| `/ui/src/lib/api.ts`              | API connector for backend communication                      |
 
 ---
 
-## 🧩 Example Workflow
+## 🧠 Example Output
 
-```bash
-# Crawl + extract in one step
-curl -X POST http://127.0.0.1:8000/crawl-and-extract \
--H "Content-Type: application/json" \
--d "{\"domain\": \"https://www.justice.gov\", \"keywords\": [\"minister\", \"judge\"], \"max_pages\": 20, \"max_depth\": 1}"
-```
-
----
-
-## 🧱 Architecture Overview
-
-```
-[ Streamlit UI ] 
-        ↓
-[ FastAPI Backend ]
-        ↓
-[ Focused Web Crawler ]
-        ↓
-[ NLP + Semantic Extractor (spaCy + Sentence Transformers) ]
-        ↓
-[ Ranked Entities & Structured Output ]
+```json
+[
+  {
+    "name": "John Doe",
+    "type": "Judge",
+    "url": "https://www.justice.gov/news/john-doe-appointed",
+    "snippet": "President announced John Doe as the new federal judge...",
+    "score": 0.92
+  },
+  {
+    "name": "Dr. Alice Smith",
+    "type": "Professor",
+    "url": "https://www.university.edu/faculty/alice-smith",
+    "snippet": "Dr. Alice Smith specializes in AI and ethics...",
+    "score": 0.89
+  }
+]
 ```
 
 ---
 
-## 🧰 Requirements
+## 🧩 UI Highlights
 
-```bash
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm
-```
-
----
-
-## 🐳 Docker (Optional)
-
-```bash
-docker-compose up --build
-```
-
-* Backend → [http://127.0.0.1:8000](http://127.0.0.1:8000)
-* Frontend → [http://localhost:8501](http://localhost:8501)
+| Section               | Description                                         |
+| --------------------- | --------------------------------------------------- |
+| 🏠 **Home**           | Introduction + Start Extraction button              |
+| ⚙️ **Crawl Settings** | Domain input, keyword filter, page/depth sliders    |
+| 🤖 **AI Extraction**  | Real-time progress + log + confidence updates       |
+| 📊 **Results**        | Structured entity table with search, stats & export |
 
 ---
 
-## 🏁 Current Status
+## 🧑‍💻 Team — *The Coding Penguins*
 
-✅ Backend, Crawler, Extractor, and UI integrated
-✅ Semantic ranking implemented using local AI
-✅ 100% offline execution
-🚧 Future work — Entity linking, summarization, and Docker deployment
-
----
-
-## 🧩 Problem It Solves
-
-Extracting meaningful information from unstructured web data is slow, inconsistent, and domain-dependent.
-Our system automates this by combining web crawling with AI-based entity understanding, enabling adaptive extraction for *any* domain — efficiently, privately, and offline.
+| Member               | Role                      | Contribution                                    |
+| -------------------- | ------------------------- | ----------------------------------------------- |
+| **Prakarsh Kaushik** | Team Lead / Backend + NLP | FastAPI backend, NLP extraction integration     |
+| **Om Upadhyay**      | Web Crawler Developer     | Built the crawling module with BFS logic        |
+| **Pratiksha**        | NLP Engineer              | Designed and fine-tuned entity extraction rules |
+| **Priyanshu Gautam** | Frontend Developer        | Built React + Tailwind UI, extraction dashboard |
 
 ---
 
-## ⚙️ Challenges Faced
+## 📅 Timeline (Deviathon 2025)
 
-Building a flexible crawler for diverse site structures, ensuring accurate extraction without noise, optimizing local AI models under limited resources, and integrating backend + UI seamlessly — all while maintaining speed and accuracy.
+| Phase       | Duration  | Deliverables                    |
+| ----------- | --------- | ------------------------------- |
+| **Phase 1** | Aug 2025  | Core backend (crawl + extract)  |
+| **Phase 2** | Sept 2025 | Streamlit → React migration     |
+| **Phase 3** | Oct 2025  | UI polish, integration, testing |
+| **Phase 4** | Nov 2025  | Final deployment & presentation |
 
 ---
 
-## 📜 License
+## 🧰 Future Improvements
 
-MIT License © 2025 — **Team The Coding Penguins 🐧**
+* [ ] Add **semantic entity linking** across pages
+* [ ] Include **LLM-assisted classification** (offline)
+* [ ] Add **Docker Compose** for one-click deployment
+* [ ] Support **visual graph view** of entities and relations
 
+---
+
+## 🏁 License
+
+This project is open-source under the **MIT License**.
+Feel free to modify, improve, and extend!
+
+---
+
+## ⭐ Acknowledgements
+
+* Built with 💙 by **The Coding Penguins** for **Deviathon 2025**
+* Powered by **FastAPI**, **spaCy**, and **React**
+* Special thanks to mentors and judges for guidance & feedback
