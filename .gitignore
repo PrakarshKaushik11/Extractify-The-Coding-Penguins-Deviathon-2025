@@ -1,43 +1,21 @@
+# Node / React
+ui/node_modules/
+ui/.next/
+ui/.turbo/
+ui/dist/
+
 # Python
+.venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
 
-# Virtual environment
-.venv/
-env/
-venv/
-
-# VSCode
-.vscode/
-
-# Streamlit
-.streamlit/
-
-# Cache / build
+# Logs / Data
 *.log
-*.sqlite3
-*.db
-*.csv
-*.json
-*.pkl
-*.bin
-*.gz
-*.zip
-*.tar
+data/
+*.jsonl
 
-# OS
+# OS / IDE
 .DS_Store
 Thumbs.db
-
-# Environment files
-.env
-
-echo .venv/ > .gitignore
-echo __pycache__/ >> .gitignore
-echo *.pyc >> .gitignore
-echo .DS_Store >> .gitignore
-echo /data/ >> .gitignore
-echo entities.json >> .gitignore
-echo pages.jsonl >> .gitignore
+.vscode/
+.idea/

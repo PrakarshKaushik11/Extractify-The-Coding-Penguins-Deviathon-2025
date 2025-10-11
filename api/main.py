@@ -20,15 +20,14 @@ ENTITIES_PATH = DATA_DIR / "entities.json"
 
 app = FastAPI(title="The Coding Penguins — Entity Extractor")
 
-# CORS (UI runs on a different port)
+# ✅ CORS: open for local dev (tighten later if you want)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],          # <-- for local dev; replace with explicit list later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # -------------------------
 # Models
@@ -51,16 +50,33 @@ class ExtractRequest(BaseModel):
 # Helpers
 # -------------------------
 def _read_json(path: Path) -> Any:
+    """
+    Robust JSON reader:
+    - returns None if file missing
+    - returns [] if file empty/whitespace
+    - returns [] if JSON is invalid/corrupted
+    """
     if not path.exists():
         return None
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+        if not text:
+            return []
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # corrupted/partial file: treat as empty
+        return []
+    except Exception:
+        # any other unexpected read error
+        return []
 
 
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    # atomic-ish write to avoid partial files
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 
 # -------------------------
@@ -103,7 +119,6 @@ def extract(payload: ExtractRequest) -> Dict[str, Any]:
     """
     if not PAGES_PATH.exists():
         raise HTTPException(status_code=400, detail="No pages found. Run /crawl first.")
-
     try:
         out = extract_entities(
             pages_path=str(PAGES_PATH),
@@ -120,6 +135,7 @@ def extract(payload: ExtractRequest) -> Dict[str, Any]:
 def results() -> List[Dict[str, Any]]:
     """
     Read the last saved entities from data/entities.json.
+    Never crashes: returns [] if missing/invalid.
     """
     data = _read_json(ENTITIES_PATH)
     if data is None:
@@ -127,7 +143,10 @@ def results() -> List[Dict[str, Any]]:
     # allow both {"entities": [...]} or plain list
     if isinstance(data, dict) and "entities" in data:
         return data["entities"]
-    return data
+    if isinstance(data, list):
+        return data
+    # fallback if unexpected structure
+    return []
 
 
 @app.post("/crawl-and-extract")
