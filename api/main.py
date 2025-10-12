@@ -18,7 +18,10 @@ DATA_DIR = Path("data")
 PAGES_PATH = DATA_DIR / "pages.jsonl"
 ENTITIES_PATH = DATA_DIR / "entities.json"
 
-app = FastAPI(title="The Coding Penguins — Entity Extractor")
+app = FastAPI(
+    title="Extractify — The Coding Penguins Project (Deviathon 2025)",
+    version="1.0.0"
+)
 
 # ✅ CORS: open for local dev (tighten later if you want)
 app.add_middleware(

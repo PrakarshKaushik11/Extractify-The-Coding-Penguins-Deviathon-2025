@@ -21,10 +21,10 @@ const Home = () => {
         <div className="relative container mx-auto px-6 py-32">
           <div className="max-w-4xl mx-auto text-center animate-fade-in">
             <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent leading-tight">
-              🐧 The Coding Penguins
+              Extractify
             </h1>
             <h2 className="text-2xl md:text-3xl font-semibold mb-6 text-foreground/90">
-              Automated Entity Extraction System
+              AI-Powered Information Structuring System
             </h2>
             <p className="text-xl text-muted-foreground mb-12 max-w-2xl mx-auto">
               Crawl → Extract → Understand any domain with local AI. 

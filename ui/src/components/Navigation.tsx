@@ -22,9 +22,8 @@ const Navigation = () => {
             <img src={penguinLogo} alt="Penguin Logo" className="w-10 h-10 transition-transform group-hover:scale-110" />
             <div>
               <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                The Coding Penguins
+                Extractify
               </h1>
-              <p className="text-xs text-muted-foreground">AI Entity Extraction System</p>
             </div>
           </Link>
           
