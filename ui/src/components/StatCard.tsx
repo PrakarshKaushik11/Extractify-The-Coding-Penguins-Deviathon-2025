@@ -12,7 +12,7 @@ interface StatCardProps {
 const StatCard = ({ title, value, icon: Icon, trend, glowColor = "cyan" }: StatCardProps) => {
   return (
     <div className={cn(
-      "glass-card rounded-xl p-6 transition-all duration-300 hover:scale-105",
+      "glass-card rounded-xl p-6 transition-all duration-300 hover:scale-105 bg-black",
       glowColor === "cyan" && "hover:glow-cyan",
       glowColor === "purple" && "hover:glow-purple",
       glowColor === "blue" && "hover:glow-blue"
