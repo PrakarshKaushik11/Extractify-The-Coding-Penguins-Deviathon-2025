@@ -1,7 +1,7 @@
 # ---------- UI build stage ----------
 FROM node:18-alpine AS ui-build
 WORKDIR /app/ui
-COPY ui/package*.json ui/yarn.lock* ./ 
+COPY ui/package*.json ui/yarn.lock* ./
 RUN npm ci --no-audit --no-fund
 COPY ui/ .
 RUN npm run build
@@ -34,15 +34,18 @@ COPY --from=api-build /usr/lib /usr/lib
 
 # copy your API code into /app/api
 COPY api /app/api
-# copy other required project files if any
+# copy crawler + extractor code
 COPY crawler /app/crawler
 COPY extractor /app/extractor
+
+# copy nginx config (use your provided nginx.conf)
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # copy start.sh into /app and make executable
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
-# expose port matching nginx config (we will run nginx + background uvicorn via start.sh)
+# expose port matching nginx config
 EXPOSE 8080
 
 # default command runs start.sh which launches uvicorn (API) and nginx will serve frontend
