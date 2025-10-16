@@ -94,26 +94,8 @@ def _write_json(path: Path, payload: Any) -> None:
         raise
 
 
-# -----------------------
-# Routes
-# -----------------------
-@app.get("/api/health")
-def health() -> Dict[str, Any]:
-    return {
-        "status": "ok",
-        "app": "Extractify — Entity Extractor",
-        "ignore_robots": (os.getenv("CP_IGNORE_ROBOTS", "0") == "1"),
-        "pages_file_present": PAGES_PATH.exists(),
-        "entities_file_present": ENTITIES_PATH.exists(),
-    }
-
-
-@app.post("/api/crawl")
-def crawl(payload: CrawlRequest) -> Dict[str, Any]:
-    """
-    Crawl a domain and write data/pages.jsonl.
-    Returns a small summary with sample URLs and stats.
-    """
+# Implementation helpers so we can expose both /api/* and top-level endpoints
+def _do_crawl(payload: CrawlRequest) -> Dict[str, Any]:
     LOG.info("Received crawl request: domain=%s pages=%s depth=%s", payload.domain, payload.max_pages, payload.max_depth)
     try:
         result = crawl_domain(
@@ -127,18 +109,13 @@ def crawl(payload: CrawlRequest) -> Dict[str, Any]:
         return result
     except Exception as e:
         LOG.exception("Crawl failed for domain %s: %s", payload.domain, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
-@app.post("/api/extract")
-def extract(payload: ExtractRequest) -> Dict[str, Any]:
-    """
-    Run the extractor over data/pages.jsonl and write data/entities.json.
-    Returns entities summary in the response.
-    """
+def _do_extract(payload: ExtractRequest) -> Any:
     LOG.info("Received extract request: target=%s keywords=%s", payload.target, payload.keywords)
     if not PAGES_PATH.exists():
-        raise HTTPException(status_code=400, detail="No pages found. Run /api/crawl first.")
+        raise HTTPException(status_code=400, detail="No pages found. Run /api/crawl or /crawl first.")
     try:
         out = extract_entities(
             pages_path=str(PAGES_PATH),
@@ -161,15 +138,10 @@ def extract(payload: ExtractRequest) -> Dict[str, Any]:
         raise
     except Exception as e:
         LOG.exception("Extraction failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Extractor error: {e}")
+        raise
 
 
-@app.get("/api/results")
-def results() -> List[Dict[str, Any]]:
-    """
-    Read the last saved entities from data/entities.json.
-    Returns [] if missing or invalid.
-    """
+def _do_results() -> List[Dict[str, Any]]:
     data = _read_json(ENTITIES_PATH)
     if data is None:
         return []
@@ -180,32 +152,17 @@ def results() -> List[Dict[str, Any]]:
     return []
 
 
-@app.post("/api/crawl-and-extract")
-def crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
-    """
-    Convenience endpoint used by the UI button: crawls then extracts.
-    Runs crawl_domain and extract_entities sequentially and returns both summaries.
-    """
+def _do_crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
     LOG.info("crawl-and-extract start: %s", payload.domain)
     try:
-        crawl_result = crawl_domain(
-            domain=payload.domain,
-            keywords=payload.keywords or [],
-            max_pages=payload.max_pages,
-            max_depth=payload.max_depth,
-            out_path=str(PAGES_PATH),
-        )
+        crawl_result = _do_crawl(payload)
     except Exception as e:
         LOG.exception("crawl part failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Crawl error: {e}")
 
     try:
-        extract_result = extract_entities(
-            pages_path=str(PAGES_PATH),
-            entities_path=str(ENTITIES_PATH),
-            keywords=payload.keywords or [],
-            target="auto",
-        )
+        extract_payload = ExtractRequest(keywords=payload.keywords or [], target="auto")
+        extract_result = _do_extract(extract_payload)
     except Exception as e:
         LOG.exception("extract part failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Extract error: {e}")
@@ -219,7 +176,89 @@ def crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
     except Exception:
         LOG.warning("Failed to persist entities.json after crawl-and-extract")
 
-    LOG.info("crawl-and-extract done: pages=%s entities=%s", crawl_result.get("pages_scanned"), 
-             (len(extract_result.get("entities")) if isinstance(extract_result, dict) and "entities" in extract_result else "n/a"))
+    LOG.info(
+        "crawl-and-extract done: pages=%s entities=%s",
+        crawl_result.get("pages_scanned"),
+        (len(extract_result.get("entities")) if isinstance(extract_result, dict) and "entities" in extract_result else "n/a"),
+    )
 
     return {"crawl": crawl_result, "extract": extract_result}
+
+
+# -----------------------
+# Routes (both /api/* and top-level duplicates)
+# -----------------------
+@app.get("/api/health")
+def api_health() -> Dict[str, Any]:
+    return {
+        "status": "ok",
+        "app": "Extractify — Entity Extractor",
+        "ignore_robots": (os.getenv("CP_IGNORE_ROBOTS", "0") == "1"),
+        "pages_file_present": PAGES_PATH.exists(),
+        "entities_file_present": ENTITIES_PATH.exists(),
+    }
+
+
+@app.get("/health")
+def health() -> Dict[str, Any]:
+    # duplicate top-level health for non-/api clients
+    return api_health()
+
+
+# Crawl
+@app.post("/api/crawl")
+def api_crawl(payload: CrawlRequest) -> Dict[str, Any]:
+    try:
+        return _do_crawl(payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/crawl")
+def crawl(payload: CrawlRequest) -> Dict[str, Any]:
+    return api_crawl(payload)
+
+
+# Extract
+@app.post("/api/extract")
+def api_extract(payload: ExtractRequest) -> Dict[str, Any]:
+    try:
+        return _do_extract(payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/extract")
+def extract(payload: ExtractRequest) -> Dict[str, Any]:
+    return api_extract(payload)
+
+
+# Results
+@app.get("/api/results")
+def api_results() -> List[Dict[str, Any]]:
+    return _do_results()
+
+
+@app.get("/results")
+def results() -> List[Dict[str, Any]]:
+    return api_results()
+
+
+# Crawl-and-extract convenience endpoint
+@app.post("/api/crawl-and-extract")
+def api_crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
+    try:
+        return _do_crawl_and_extract(payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/crawl-and-extract")
+def crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
+    return api_crawl_and_extract(payload)
