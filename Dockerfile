@@ -1,56 +1,49 @@
-# ---------- Build frontend ----------
+# ---------- UI build stage ----------
 FROM node:18-alpine AS ui-build
 WORKDIR /app/ui
-# copy only package files to leverage caching
 COPY ui/package*.json ui/yarn.lock* ./ 
-RUN npm ci
-COPY ui/ ./
+RUN npm ci --no-audit --no-fund
+COPY ui/ .
 RUN npm run build
 
-# ---------- Python backend + model ----------
+# ---------- API build stage ----------
 FROM python:3.11-slim AS api-build
 WORKDIR /app
-# system deps for spacy and uvicorn
+# install system deps required for building some python packages (kept minimal)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential git curl gcc libc6-dev libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential git curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # copy requirements and install
 COPY api/requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download spaCy model at build time to avoid runtime blocking
-# Adjust the wheel URL to match the spacy + model version in requirements.txt
-RUN python -m spacy download en_core_web_sm || true
-
-# copy backend code
-COPY api/ ./api/
-
-# ---------- Final runtime image ----------
+# ---------- Runtime stage ----------
 FROM nginx:1.25-alpine AS runtime
-# Create app directories
+# create app dir
+RUN mkdir -p /app
 WORKDIR /app
 
-# Copy built frontend to nginx html dir
+# copy built ui files to nginx served directory (assumes nginx serves /usr/share/nginx/html)
 COPY --from=ui-build /app/ui/dist /usr/share/nginx/html
 
-# Copy backend / python runtime from previous stage
-# We copy the entire Python install used in api-build for uvicorn & packages
-# Note: this is a pragmatic approach—if you prefer, install Python into final image
-COPY --from=api-build /usr/local/lib/python3.11 /usr/local/lib/python3.11
-COPY --from=api-build /usr/local/bin /usr/local/bin
-COPY --from=api-build /usr/bin /usr/bin
+# copy python runtime from api-build
+COPY --from=api-build /usr/local /usr/local
 COPY --from=api-build /usr/lib /usr/lib
-COPY --from=api-build /app/api /app/api
 
-# Copy nginx conf and start script
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# copy your API code into /app/api
+COPY api /app/api
+# copy other required project files if any
+COPY crawler /app/crawler
+COPY extractor /app/extractor
+
+# copy start.sh into /app and make executable
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
-# Expose port 8080 (Render expects this)
+# expose port matching nginx config (we will run nginx + background uvicorn via start.sh)
 EXPOSE 8080
 
-# Run start script which launches uvicorn & nginx
+# default command runs start.sh which launches uvicorn (API) and nginx will serve frontend
 CMD ["/app/start.sh"]
