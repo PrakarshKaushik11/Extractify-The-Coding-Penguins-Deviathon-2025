@@ -1,17 +1,17 @@
 // API service for connecting to the backend
 
 // Resolve base URL:
-// - production: set VITE_API_BASE to your Railway backend (e.g. https://penguins-backend.up.railway.app)
-// - local dev: falls back to http://localhost:8000
+// - production: use VITE_API_URL (set to https://extractify-80dl.onrender.com in Render)
+// - local dev: fallback to http://localhost:8000 ONLY if no env var is found
 const RESOLVED_BASE =
-  (import.meta.env.VITE_API_BASE as string | undefined)?.trim() ||
+  (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
   (typeof window !== "undefined" && window.location.hostname === "localhost"
     ? "http://localhost:8000"
-    : "http://localhost:8000"); // change if you use a different default
+    : "https://extractify-80dl.onrender.com"); // production default
 
 const API_BASE = RESOLVED_BASE.replace(/\/+$/, ""); // trim trailing slashes
 
-// Types
+// ---- Types ----
 export interface CrawlRequest {
   domain: string;
   keywords: string[];
@@ -25,16 +25,15 @@ export interface ExtractRequest {
   min_score?: number;
 }
 
-// Helper for JSON fetch with better errors
+// ---- Helper for JSON fetch with better errors ----
 async function fetchJSON(input: string, init?: RequestInit) {
   const res = await fetch(input, init);
   let payload: any = null;
 
   try {
-    // Try to parse JSON body no matter what
     payload = await res.json();
   } catch {
-    // swallow JSON parse errors; payload remains null
+    // ignore parse errors, payload stays null
   }
 
   if (!res.ok) {
@@ -48,7 +47,7 @@ async function fetchJSON(input: string, init?: RequestInit) {
   return payload;
 }
 
-// API functions
+// ---- API functions ----
 export const api = {
   // Health check
   health: async () => fetchJSON(`${API_BASE}/health`),
