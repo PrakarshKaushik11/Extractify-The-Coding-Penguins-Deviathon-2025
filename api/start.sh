@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# Optional: install model at build time; if missing, attempt download at start
-if ! python -c "import importlib,sys; importlib.import_module('en_core_web_sm')" 2>/dev/null; then
-  echo "en_core_web_sm not installed — attempting download..."
-  python -m spacy download en_core_web_sm || true
-fi
+# Use PORT from environment (Render sets $PORT); default to 8000 locally.
+PORT="${PORT:-8000}"
 
-# Start uvicorn on 0.0.0.0: you can change workers as needed
-exec uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2
+# Optional: print env for debugging
+echo "Starting app on 0.0.0.0:${PORT}"
+echo "PYTHONPATH=${PYTHONPATH:-.}"
+env | grep -Ei 'port|python' || true
+
+# Run uvicorn
+exec uvicorn api.main:app --host 0.0.0.0 --port "${PORT}" --proxy-headers
