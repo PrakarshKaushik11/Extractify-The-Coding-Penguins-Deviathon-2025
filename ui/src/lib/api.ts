@@ -3,13 +3,15 @@
 // Resolve base URL:
 // - production: use VITE_API_URL (set to https://extractify-80dl.onrender.com in Render)
 // - local dev: fallback to http://localhost:8000 ONLY if no env var is found
-const RESOLVED_BASE =
-  (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
-  (typeof window !== "undefined" && window.location.hostname === "localhost"
-    ? "http://localhost:8000"
-    : "https://extractify-80dl.onrender.com"); // production default
+// ui/src/lib/api.ts — ensure API_BASE points to /api on deployed host
+const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
+            (typeof window !== "undefined" && window.location.hostname === "localhost"
+               ? "http://localhost:8000"
+               : "https://extractify-80dl.onrender.com");
 
-const API_BASE = RESOLVED_BASE.replace(/\/+$/, ""); // trim trailing slashes
+// ensure calls go to /api prefix
+export const API_BASE = raw.replace(/\/+$/, "") + "/api";
+
 
 // ---- Types ----
 export interface CrawlRequest {
