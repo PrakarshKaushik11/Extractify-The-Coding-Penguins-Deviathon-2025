@@ -45,8 +45,8 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
-# expose port matching nginx config
-EXPOSE 8080
+# expose ports (nginx listens on 8080 in your nginx.conf; optional but useful)
+EXPOSE 8080 8001
 
-# default command runs start.sh which launches uvicorn (API) and nginx will serve frontend
+# default command runs start.sh which launches nginx (background) and uvicorn (foreground)
 CMD ["/app/start.sh"]

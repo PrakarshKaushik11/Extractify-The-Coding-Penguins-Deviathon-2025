@@ -1,14 +1,18 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
-cd /app || exit 1
+# Internal port where uvicorn runs (nginx proxies to this)
+UVICORN_PORT=8001
 
-# uvicorn port for the internal API service (nginx will proxy /api -> this port)
-UVICORN_PORT="8001"
-HOST="127.0.0.1"
+echo "Starting nginx (serving UI) and uvicorn (API)."
+echo "NGINX config: /etc/nginx/conf.d/default.conf"
+echo "Starting nginx..."
+nginx
 
-# Start backend (uvicorn) in background listening on localhost:8001
-python -m uvicorn api.main:app --host "$HOST" --port "$UVICORN_PORT" --workers 2 &
+# Print a small pause to let nginx come up (optional)
+sleep 0.5
 
-# Start nginx in foreground (will serve the built UI and proxy /api to uvicorn)
-exec nginx -g "daemon off;"
+echo "Starting uvicorn on 0.0.0.0:${UVICORN_PORT}"
+# uvicorn binary is installed into /usr/local/bin by the python image + pip install
+# Run uvicorn in foreground (exec) so container PID is the uvicorn process
+exec uvicorn api.main:app --host 0.0.0.0 --port "${UVICORN_PORT}" --proxy-headers --workers 1
