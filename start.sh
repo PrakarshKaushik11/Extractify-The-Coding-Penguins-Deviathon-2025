@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 set -euo pipefail
 
 # Internal port where uvicorn runs (nginx proxies to this)
