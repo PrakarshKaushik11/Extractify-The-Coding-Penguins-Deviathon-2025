@@ -327,6 +327,7 @@ You're free to use, modify, and distribute this project with proper attribution.
 For questions, suggestions, or collaboration opportunities:
 
 - **GitHub:** [PrakarshKaushik11](https://github.com/PrakarshKaushik11)
+- **LinkedIn:** [Prakarsh Kaushik](https://www.linkedin.com/in/prakarsh-kaushik/)
 - **Project Repository:** [Extractify-The-Coding-Penguins-Deviathon-2025](https://github.com/PrakarshKaushik11/Extractify-The-Coding-Penguins-Deviathon-2025)
 
 ---
