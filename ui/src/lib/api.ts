@@ -1,12 +1,12 @@
 // API service for connecting to the backend
 
 // Resolve base URL:
-// - production: use VITE_API_URL (set to https://extractify-80dl.onrender.com in Render)
-// - local dev: fallback to http://localhost:8000 ONLY if no env var is found
+// - production: use VITE_API_URL from environment
+// - local dev: fallback to http://localhost:8001 (matches the backend server port)
 // ui/src/lib/api.ts — ensure API_BASE points to /api on deployed host
 const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
             (typeof window !== "undefined" && window.location.hostname === "localhost"
-               ? "http://localhost:8000"
+               ? "http://localhost:8001"
                : "https://extractify-80dl.onrender.com");
 
 // ensure calls go to /api prefix
@@ -27,26 +27,56 @@ export interface ExtractRequest {
   min_score?: number;
 }
 
-// ---- Helper for JSON fetch with better errors ----
-async function fetchJSON(input: string, init?: RequestInit) {
-  const res = await fetch(input, init);
-  let payload: any = null;
+// ---- Helper for JSON fetch with better errors and retry logic ----
+async function fetchJSON(input: string, init?: RequestInit, retries = 2) {
+  let lastError: Error | null = null;
 
-  try {
-    payload = await res.json();
-  } catch {
-    // ignore parse errors, payload stays null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(input, {
+        ...init
+        // No timeout signal
+      });
+      
+      let payload: any = null;
+
+      try {
+        const text = await res.text();
+        payload = text ? JSON.parse(text) : null;
+      } catch (parseError) {
+        // ignore parse errors, payload stays null
+        console.warn("Failed to parse response:", parseError);
+      }
+
+      if (!res.ok) {
+        const detail =
+          payload?.detail ||
+          payload?.message ||
+          (res.status === 404 ? "Endpoint not found. Make sure the backend API is running." :
+           res.status === 500 ? "Internal server error. Check backend logs." :
+           res.status === 503 ? "Service unavailable. Backend may be starting up." :
+           `${res.status} ${res.statusText}`) ||
+          "Request failed";
+        throw new Error(detail);
+      }
+      
+      return payload;
+    } catch (error) {
+      lastError = error as Error;
+      
+      // Don't retry on client errors (400-499)
+      if (error instanceof Error && error.message.includes("404")) {
+        throw error;
+      }
+      
+      // If this isn't the last attempt, wait before retrying
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Exponential backoff
+      }
+    }
   }
 
-  if (!res.ok) {
-    const detail =
-      payload?.detail ||
-      payload?.message ||
-      `${res.status} ${res.statusText}` ||
-      "Request failed";
-    throw new Error(detail);
-  }
-  return payload;
+  throw new Error(lastError?.message || "Network request failed after retries");
 }
 
 // ---- API functions ----

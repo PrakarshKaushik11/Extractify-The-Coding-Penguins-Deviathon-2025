@@ -3,6 +3,54 @@
 > ⚡ Crawl → Extract → Understand any domain using local AI  
 > An **intelligent, offline information structuring system** that turns raw, unstructured website data into clean, organized knowledge.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18+-blue.svg)](https://reactjs.org/)
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.11 or higher
+- Node.js 18+ (npm or bun)
+- Git
+
+### Installation & Running
+
+```powershell
+# 1. Clone the repository
+git clone https://github.com/PrakarshKaushik11/Extractify-The-Coding-Penguins-Deviathon-2025.git
+cd "Extractify - The Coding Penguins Project Deviathon 2025"
+
+# 2. Backend Setup
+# Create and activate virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1  # Windows
+# source .venv/bin/activate    # Mac/Linux
+
+# Install dependencies
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+
+# 3. Frontend Setup (in a new terminal)
+cd ui
+npm install  # or: bun install
+
+# 4. Start Backend (terminal 1)
+python -m uvicorn api.main:app --host 127.0.0.1 --port 8001 --reload
+
+# 5. Start Frontend (terminal 2)
+cd ui
+npm run dev  # or: bun run dev
+```
+
+**Access the application:**
+- 🌐 **Frontend UI:** http://localhost:8080
+- 📚 **Backend API Docs:** http://127.0.0.1:8001/docs
+- ❤️ **Health Check:** http://127.0.0.1:8001/api/health
+
 ---
 
 ## 🧩 Overview
@@ -73,62 +121,72 @@ cd "Extractify - The Coding Penguins Project Deviathon 2025"
 
 ---
 
-### 2️⃣ Backend Setup (FastAPI)
+## 📖 How to Use
 
-```bash
-cd api
-python -m venv .venv
-.venv\Scripts\activate   # On Windows
-# or
-source .venv/bin/activate   # On Mac/Linux
+### Workflow
 
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+1. **Launch the application** (both backend and frontend)
+2. **Open the UI** in your browser at http://localhost:8080
+3. **Navigate to Crawl Settings** page
+4. **Configure crawl parameters:**
+   - Enter a **target domain** (e.g., `https://www.geeksforgeeks.org`)
+   - Add **keywords** (comma-separated, e.g., `faculty, professor, teacher`)
+   - Set **max pages** (10-500) and **crawl depth** (1-5)
+5. **Click "Start Crawl"** — the system will:
+   - Crawl the domain and collect pages
+   - Extract entities using AI/NLP
+   - Display real-time progress
+6. **View Results** — see extracted entities in a dynamic table
+7. **Export Data** — download results as CSV or JSON
+
+### Tips for Best Results
+
+- Use specific keywords related to your target entities
+- Start with smaller page counts (50-100) for testing
+- Increase depth for deeper site exploration
+- Check the "AI Extraction" page for real-time progress
+
+---
+
+## 📂 Project Structure
+
 ```
-
-Your backend will now run at:
-➡️ **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
-
----
-
-### 3️⃣ Frontend Setup (React + Vite)
-
-```bash
-cd ui
-npm install
-npm run dev
+Extractify/
+├── api/
+│   ├── main.py              # FastAPI backend routes & logic
+│   ├── validators.py        # Input validation utilities
+│   └── __init__.py
+├── crawler/
+│   ├── scraper.py           # Web crawler with BFS traversal
+│   └── __init__.py
+├── extractor/
+│   ├── nlp_pipeline.py      # AI/NLP entity extraction engine
+│   └── __init__.py
+├── ui/
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── Home.tsx              # Landing page
+│   │   │   ├── CrawlSettings.tsx    # Crawl configuration
+│   │   │   ├── Extraction.tsx       # Real-time extraction view
+│   │   │   ├── Results.tsx          # Results table + export
+│   │   │   └── SystemInfo.tsx       # System information
+│   │   ├── components/
+│   │   │   ├── Navigation.tsx       # Top navigation bar
+│   │   │   └── StatCard.tsx         # Stats display component
+│   │   ├── lib/
+│   │   │   └── api.ts               # Frontend API client
+│   │   └── App.tsx
+│   ├── public/              # Static assets
+│   └── package.json
+├── data/
+│   ├── pages.jsonl          # Crawled pages (temporary)
+│   └── entities.json        # Extracted entities (output)
+├── requirements.txt         # Python dependencies
+├── .env                     # Environment variables
+├── .gitignore              # Git ignore rules
+├── LICENSE                 # MIT License
+└── README.md               # This file
 ```
-
-Your frontend runs at:
-➡️ **[http://localhost:8080](http://localhost:8080)**
-
----
-
-### 4️⃣ Typical Workflow
-
-1. Launch both backend and frontend
-2. Open the UI in your browser
-3. Enter a **target domain** (e.g. `https://www.codingblocks.com`)
-4. Set **max pages** and **crawl depth**
-5. Click **Start Crawl**
-6. The system crawls → extracts entities → displays structured results
-7. Export results as **JSON** from the Results page
-
----
-
-## 📂 Core Files
-
-| Path                              | Description                                               |
-| --------------------------------- | --------------------------------------------------------- |
-| `/api/main.py`                    | FastAPI backend routes (`/crawl`, `/extract`, `/results`) |
-| `/crawler/scraper.py`             | Domain crawler with BFS traversal & keyword filtering     |
-| `/extractor/nlp_pipeline.py`      | NLP entity extraction pipeline                            |
-| `/ui/src/pages/CrawlSettings.tsx` | Crawl configuration screen                                |
-| `/ui/src/pages/Extraction.tsx`    | Real-time extraction view                                 |
-| `/ui/src/pages/Results.tsx`       | Results dashboard + JSON export                           |
-| `/ui/src/lib/api.ts`              | Frontend-backend connector                                |
-| `/data/pages.jsonl`               | Stores crawled pages temporarily                          |
-| `/data/entities.json`             | Stores extracted entities                                 |
 
 ---
 
@@ -155,41 +213,127 @@ Your frontend runs at:
 
 ---
 
-## 💻 UI Highlights
+## 🎯 Features in Detail
 
-| Section               | Description                                        |
-| --------------------- | -------------------------------------------------- |
-| 🏠 **Home**           | Start button to begin crawl & extraction           |
-| ⚙️ **Crawl Settings** | Domain, keywords, page & depth configuration       |
-| 🤖 **AI Extraction**  | Live progress updates and analysis logs            |
-| 📊 **Results**        | Table view of all extracted entities + JSON export |
+### 🕷️ Smart Web Crawler
+- **BFS (Breadth-First Search)** traversal for systematic page discovery
+- **Keyword-based prioritization** for relevant pages
+- **Respects robots.txt** (can be disabled for testing)
+- **Configurable depth and page limits**
+- **Rate limiting** to avoid overwhelming servers
+
+### 🧠 AI-Powered Entity Extraction
+- **spaCy NLP** for named entity recognition
+- **Semantic scoring** using SentenceTransformers
+- **Context-aware extraction** with surrounding text analysis
+- **Regex patterns** for phone numbers, addresses, years
+- **Duplicate detection and merging**
+- **Confidence scoring** for each entity
+
+### 💻 Modern Web Interface
+- **Responsive design** with Tailwind CSS
+- **Real-time progress tracking** during crawl/extraction
+- **Dynamic table rendering** based on extracted fields
+- **CSV/JSON export** capabilities
+- **Stats dashboard** with entity counts and metrics
+- **Dark theme** for comfortable viewing
 
 ---
 
-## 👩‍💻 Team — *The Coding Penguins*
+## � Team — *The Coding Penguins*
 
-| Member                  | Role                      | Contribution                                 |
-| ----------------------- | ------------------------- | -------------------------------------------- |
-| 🧠 **Prakarsh Kaushik** | Team Lead / Backend + NLP | Designed FastAPI backend and NLP integration |
-| 🕷️ **Om Upadhyay**     | Web Crawler Developer     | Built the crawler (BFS + keyword filtering)  |
-| 🧩 **Pratiksha**        | NLP Engineer              | Designed and refined entity extraction logic |
-| 💻 **Priyanshu Gautam** | Frontend Developer        | Built modern React + Tailwind UI             |
+<table>
+  <tr>
+    <td align="center">
+      <h3>🧠 Prakarsh Kaushik</h3>
+      <p><b>Team Lead | Backend & NLP</b></p>
+      <p>FastAPI backend architecture<br>NLP pipeline integration<br>Project coordination</p>
+    </td>
+    <td align="center">
+      <h3>🕷️ Om Upadhyay</h3>
+      <p><b>Crawler Developer</b></p>
+      <p>Web crawler implementation<br>BFS algorithm & optimization<br>Link filtering logic</p>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <h3>🧩 Pratiksha</h3>
+      <p><b>NLP Engineer</b></p>
+      <p>Entity extraction logic<br>Pattern matching rules<br>AI model integration</p>
+    </td>
+    <td align="center">
+      <h3>💻 Priyanshu Gautam</h3>
+      <p><b>Frontend Developer</b></p>
+      <p>React UI/UX design<br>Component development<br>API integration</p>
+    </td>
+  </tr>
+</table>
 
 ---
 
-## 🏁 License
+## 🐛 Troubleshooting
 
-This project is licensed under the **MIT License** —
-You’re free to use, modify, and enhance it with credit to the original authors.
+### Backend won't start
+- Ensure Python 3.11+ is installed: `python --version`
+- Activate virtual environment: `.venv\Scripts\Activate.ps1`
+- Install dependencies: `pip install -r requirements.txt`
+- Download spaCy model: `python -m spacy download en_core_web_sm`
+
+### Frontend won't start
+- Ensure Node.js 18+ is installed: `node --version`
+- Delete `node_modules` and reinstall: `rm -rf node_modules && npm install`
+- Check if port 8080 is available
+
+### Crawl timeout or no results
+- Reduce `max_pages` and `max_depth` in Crawl Settings
+- Try a simpler domain first (e.g., example.com)
+- Check backend logs for errors
+
+### No entities extracted
+- Ensure keywords are relevant to the target domain
+- Try broader keywords or remove keywords entirely
+- Check if the crawled pages contain actual content (not just navigation)
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome!  
+Feel free to check the [issues page](https://github.com/PrakarshKaushik11/Extractify-The-Coding-Penguins-Deviathon-2025/issues).
+
+---
+
+## 📝 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+You're free to use, modify, and distribute this project with proper attribution.
 
 ---
 
 ## 💙 Acknowledgements
 
-* Built with ❤️ by **The Coding Penguins** for **Deviathon 2025**
-* Powered by **FastAPI**, **spaCy**, and **React**
-* Special thanks to our mentors, organizers, and judges for their guidance
+- Built with ❤️ by **The Coding Penguins** for **Deviathon 2025**
+- Powered by **FastAPI**, **spaCy**, **React**, and **Tailwind CSS**
+- Special thanks to:
+  - Our mentors and organizers at Deviathon 2025
+  - The open-source community for amazing tools
+  - All judges and supporters of this project
 
 ---
+
+## 📧 Contact
+
+For questions, suggestions, or collaboration opportunities:
+
+- **GitHub:** [PrakarshKaushik11](https://github.com/PrakarshKaushik11)
+- **Project Repository:** [Extractify-The-Coding-Penguins-Deviathon-2025](https://github.com/PrakarshKaushik11/Extractify-The-Coding-Penguins-Deviathon-2025)
+
+---
+
+<div align="center">
+  <p><b>Made with 🐧 by The Coding Penguins</b></p>
+  <p>⭐ Star this repo if you find it helpful!</p>
+</div>
 
 

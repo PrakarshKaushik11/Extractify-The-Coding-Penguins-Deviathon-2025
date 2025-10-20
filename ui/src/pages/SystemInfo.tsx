@@ -1,8 +1,29 @@
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Cpu, HardDrive, Zap, CheckCircle2 } from "lucide-react";
+import { Cpu, HardDrive, Zap, CheckCircle2, Loader2, Server, AlertCircle } from "lucide-react";
+import { api, API_BASE } from "@/lib/api";
+import { toast } from "sonner";
 
 const SystemInfo = () => {
+  const [healthData, setHealthData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchHealth = async () => {
+      try {
+        const data = await api.health();
+        setHealthData(data);
+      } catch (error) {
+        console.error("Failed to fetch health data:", error);
+        toast.error("Failed to connect to backend API");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchHealth();
+  }, []);
+
   return (
     <div className="container mx-auto px-6 py-12 max-w-4xl">
       <div className="mb-8 animate-fade-in">
@@ -10,35 +31,86 @@ const SystemInfo = () => {
           System Information
         </h1>
         <p className="text-muted-foreground">
-          Runtime environment and AI model configuration
+          Backend API status and configuration
         </p>
       </div>
 
-      <div className="space-y-6">
-        <Card className="glass-card p-6 animate-slide-in">
-          <div className="flex items-center gap-3 mb-4">
-            <Cpu className="w-6 h-6 text-primary" />
-            <h2 className="text-xl font-semibold">Runtime Device</h2>
-            <Badge className="bg-primary/20 text-primary border-primary/50">
-              <CheckCircle2 className="w-3 h-3 mr-1" />
-              Active
-            </Badge>
-          </div>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Processing Unit</span>
-              <span className="font-semibold text-primary">GPU (CUDA 11.8)</span>
+      {isLoading ? (
+        <div className="flex justify-center items-center py-20">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <Card className="glass-card p-6 animate-slide-in">
+            <div className="flex items-center gap-3 mb-4">
+              <Server className="w-6 h-6 text-primary" />
+              <h2 className="text-xl font-semibold">Backend API Status</h2>
+              <Badge className={healthData?.status === "ok" ? "bg-green-500/20 text-green-400 border-green-500/50" : "bg-red-500/20 text-red-400 border-red-500/50"}>
+                {healthData?.status === "ok" ? (
+                  <>
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Online
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-3 h-3 mr-1" />
+                    Offline
+                  </>
+                )}
+              </Badge>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Memory Available</span>
-              <span className="font-semibold">16 GB VRAM</span>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">API Endpoint</span>
+                <span className="font-semibold text-primary">{API_BASE}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Application</span>
+                <span className="font-semibold">{healthData?.app || "Extractify — Entity Extractor"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Robots.txt Handling</span>
+                <span className="font-semibold">{healthData?.ignore_robots ? "Ignored" : "Respected"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Pages Data</span>
+                <Badge variant={healthData?.pages_file_present ? "default" : "outline"}>
+                  {healthData?.pages_file_present ? "Available" : "Not Found"}
+                </Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Entities Data</span>
+                <Badge variant={healthData?.entities_file_present ? "default" : "outline"}>
+                  {healthData?.entities_file_present ? "Available" : "Not Found"}
+                </Badge>
+              </div>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Compute Capability</span>
-              <span className="font-semibold">8.6 (RTX 3080)</span>
+          </Card>
+
+          <Card className="glass-card p-6 animate-slide-in">
+            <div className="flex items-center gap-3 mb-4">
+              <Cpu className="w-6 h-6 text-primary" />
+              <h2 className="text-xl font-semibold">Runtime Environment</h2>
+              <Badge className="bg-primary/20 text-primary border-primary/50">
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                Active
+              </Badge>
             </div>
-          </div>
-        </Card>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Python Version</span>
+                <span className="font-semibold text-primary">3.11.6</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Framework</span>
+                <span className="font-semibold">FastAPI + Uvicorn</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Environment</span>
+                <span className="font-semibold">Virtual Environment (.venv)</span>
+              </div>
+            </div>
+          </Card>
 
         <Card className="glass-card p-6 animate-slide-in" style={{ animationDelay: '0.1s' }}>
           <div className="flex items-center gap-3 mb-4">
@@ -112,7 +184,8 @@ const SystemInfo = () => {
             <div className="text-primary font-bold">✓ All models initialized successfully</div>
           </div>
         </Card>
-      </div>
+        </div>
+      )}
     </div>
   );
 };

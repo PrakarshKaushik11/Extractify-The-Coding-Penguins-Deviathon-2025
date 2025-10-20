@@ -99,6 +99,10 @@ def _extract_candidates_from_page(page_text: str, page_url: str) -> list[dict]:
     doc = nlp(page_text)
     out: list[dict] = []
 
+    phone_re = re.compile(r"(\+?\d{1,3}[\s-]?)?(\(?\d{2,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{3,4}")
+    address_re = re.compile(r"\d{1,5} [A-Za-z0-9 .,'-]+(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Blvd|Boulevard|Campus|Building|Block|Sector|Colony|Area)", re.I)
+    year_re = re.compile(r"(19|20)\d{2}")
+
     for ent in doc.ents:
         if ent.label_ != "PERSON":
             continue
@@ -128,12 +132,29 @@ def _extract_candidates_from_page(page_text: str, page_url: str) -> list[dict]:
 
         snippet = ctx.strip()[:360]
 
+        # Extract phone, address, passing year from context
+        phone = None
+        address = None
+        passing_year = None
+        m_phone = phone_re.search(ctx)
+        if m_phone:
+            phone = m_phone.group(0)
+        m_addr = address_re.search(ctx)
+        if m_addr:
+            address = m_addr.group(0)
+        m_year = year_re.search(ctx)
+        if m_year:
+            passing_year = m_year.group(0)
+
         out.append({
             "name": ent.text.strip(),
             "title": title_guess,
             "org": org_guess,
             "context_url": page_url,
             "snippet": snippet,
+            "phone": phone,
+            "address": address,
+            "passing_year": passing_year,
             "_features": {
                 "has_title": 1.0 if title_guess else 0.0,
                 "has_org": 1.0 if org_guess else 0.0,
@@ -209,6 +230,9 @@ def extract_entities(
             continue
         for c in _extract_candidates_from_page(txt, url):
             c["_score"] = _score_candidate(c, kw)
+            # Only keep candidates with semantic score > 0.15 if keywords are provided
+            if kw and _semantic_score((c.get("title") or "") + " " + (c.get("snippet") or ""), kw) < 0.15:
+                continue
             cands.append(c)
 
     # De-duplicate by (name, title, url), keeping best
@@ -225,6 +249,9 @@ def extract_entities(
             "url": c.get("context_url"),
             "snippet": c.get("snippet"),
             "score": round(float(c["_score"]), 3),
+            "phone": c.get("phone"),
+            "address": c.get("address"),
+            "passing_year": c.get("passing_year"),
         }
         for c in sorted(best.values(), key=lambda x: x["_score"], reverse=True)
     ]

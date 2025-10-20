@@ -19,34 +19,54 @@ const CrawlSettings = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleStartCrawl = async () => {
+    // Validation
     if (!domain.trim()) {
       toast.error("Please enter a Target Domain before starting.");
       return;
     }
 
+    // Validate URL format
     try {
-      setIsLoading(true);
+      const url = new URL(domain.trim().startsWith('http') ? domain.trim() : `https://${domain.trim()}`);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        toast.error("Domain must use HTTP or HTTPS protocol");
+        return;
+      }
+    } catch (e) {
+      toast.error("Invalid domain URL format");
+      return;
+    }
 
-      const payload = {
-        domain: domain.trim(),
-        keywords: keywords.split(",").map((k) => k.trim()).filter(Boolean),
-        max_pages: maxPages[0],
-        max_depth: maxDepth[0],
-      };
+    setIsLoading(true);
+    toast.info("Starting crawl and extraction...", { duration: 2000 });
 
-      // Run the full pipeline synchronously (your backend does crawl -> extract)
+    // Prepare payload and persist config for Extraction tab
+    const payload = {
+      domain: domain.trim(),
+      keywords: keywords.split(",").map((k) => k.trim()).filter(Boolean),
+      max_pages: maxPages[0],
+      max_depth: maxDepth[0],
+    };
+    localStorage.setItem("penguin:crawlConfig", JSON.stringify(payload));
+    localStorage.setItem("penguin:crawlDone", "0");
+
+    // Redirect immediately to Extraction tab
+    navigate("/extraction");
+
+    // Start crawl-and-extract in background
+    try {
       const result = await api.crawlAndExtract(payload);
-
-      // Persist config + stats for Extraction/Results screens
-      localStorage.setItem("penguin:crawlConfig", JSON.stringify(payload));
-      localStorage.setItem("penguin:lastRunStats", JSON.stringify(result?.extract || {}));
+      localStorage.setItem("penguin:lastRunStats", JSON.stringify(result || {}));
       localStorage.setItem("penguin:crawlDone", "1");
-
-      toast.success("Crawl and extraction completed successfully!");
-      navigate("/extraction");
+      const entitiesCount = result?.extract?.entities?.length || 
+                           (Array.isArray(result?.extract) ? result.extract.length : 0) ||
+                           0;
+      toast.success(`Crawl completed! Found ${entitiesCount} entities.`, { duration: 4000 });
     } catch (error) {
       console.error("Crawl error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to start crawl");
+      const errorMsg = error instanceof Error ? error.message : "Failed to start crawl";
+      toast.error(`Crawl failed: ${errorMsg}`, { duration: 5000 });
+      localStorage.setItem("penguin:crawlDone", "1");
     } finally {
       setIsLoading(false);
     }

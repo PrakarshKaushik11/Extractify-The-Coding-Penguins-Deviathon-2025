@@ -26,7 +26,7 @@ interface Entity {
 
 const Results = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [entities, setEntities] = useState<Entity[]>([]);
+  const [entities, setEntities] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({
     totalEntities: 0,
@@ -35,45 +35,57 @@ const Results = () => {
     pagesAnalyzed: 0,
   });
 
+  // ...existing code...
+  // ...existing code...
+  // Only keep one set of crawlConfig, lastRun, and domain declarations
   const crawlConfig = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("penguin:crawlConfig") || "{}"); }
     catch { return {}; }
-  }, []);
+  }, [localStorage.getItem("penguin:crawlConfig")]);
   const lastRun = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("penguin:lastRunStats") || "{}"); }
     catch { return {}; }
-  }, []);
+  }, [localStorage.getItem("penguin:lastRunStats")]);
   const domain: string = crawlConfig?.domain || lastRun?.domain || "—";
 
+  // Reset state on unmount or crawlConfig change
   useEffect(() => {
+    return () => {
+      setEntities([]);
+      setStats({
+        totalEntities: 0,
+        avgScore: "0%",
+        entityTypes: 0,
+        pagesAnalyzed: 0,
+      });
+    };
+  }, [crawlConfig]);
+
+  useEffect(() => {
+    // Reset stats if new crawlConfig is detected
+    setStats({
+      totalEntities: 0,
+      avgScore: "0%",
+      entityTypes: 0,
+      pagesAnalyzed: 0,
+    });
+    setEntities([]);
     const fetchResults = async () => {
       try {
         setIsLoading(true);
         const data = await api.getResults();
-
-        const formatted: Entity[] = (Array.isArray(data) ? data : []).map((d: any) => ({
-          name: d.name,
-          type: d.type || "Unknown",
-          url: d.url || d.context_url || "#",
-          snippet: d.snippet || "",
-          score: d.score || d.confidence || 0,
-        }));
-
-        const avgScore =
-          formatted.length > 0
-            ? formatted.reduce((sum, e) => sum + (e.score || 0), 0) / formatted.length
-            : 0;
-
-        setEntities(formatted);
+        const arr = Array.isArray(data) ? data : [];
+        setEntities(arr);
+        // Compute stats
+        const avgScore = arr.length > 0 ? arr.reduce((sum, e) => sum + (e.score || 0), 0) / arr.length : 0;
         setStats({
-          totalEntities: formatted.length,
+          totalEntities: arr.length,
           avgScore: `${(avgScore * 100).toFixed(1)}%`,
-          entityTypes: new Set(formatted.map((e) => e.type)).size,
+          entityTypes: new Set(arr.map((e) => e.type)).size,
           pagesAnalyzed:
             Number(lastRun?.pages_scanned ?? 0) || Number(crawlConfig?.max_pages ?? 0) || 0,
         });
-
-        if (formatted.length === 0) {
+        if (arr.length === 0) {
           toast.info("No entities found for this run.");
         }
       } catch (error) {
@@ -83,32 +95,28 @@ const Results = () => {
         setIsLoading(false);
       }
     };
-
     fetchResults();
   }, [crawlConfig, lastRun]);
 
   // Filtered view matches table + export
-  const filtered = useMemo(
-    () =>
-      entities.filter((e) =>
-        (e.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (e.type || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (e.snippet || "").toLowerCase().includes(searchQuery.toLowerCase())
-      ),
-    [entities, searchQuery]
-  );
+  const filtered: Record<string, any>[] = useMemo(() => {
+    if (!entities || entities.length === 0) return [];
+    return entities.filter((e) => {
+      return Object.values(e).some(
+        v => (typeof v === "string" ? v.toLowerCase().includes(searchQuery.toLowerCase()) : false)
+      );
+    });
+  }, [entities, searchQuery]);
 
   const exportEntities = (format: "csv" | "json" = "csv") => {
     if (!filtered || filtered.length === 0) {
       toast.info("No entities to export.");
       return;
     }
-
     const domainSafe = (domain || "domain")
       .replace(/^https?:\/\//, "")
       .replace(/[^\w.-]+/g, "_");
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
-
     if (format === "json") {
       const jsonBlob = new Blob([JSON.stringify(filtered, null, 2)], {
         type: "application/json",
@@ -125,27 +133,25 @@ const Results = () => {
       toast.success(`Exported ${filtered.length} entities as JSON`);
       return;
     }
-
-    // CSV
-    const header = ["name", "type", "confidence", "url", "snippet"];
-    const rows = filtered.map((e) => [
-      e.name ?? "",
-      e.type ?? "",
-      `${((e.score ?? 0) * 100).toFixed(1)}%`,
-      e.url ?? "",
-      e.snippet ?? "",
-    ]);
-
+    // CSV: auto-detect all keys
+    let keySet = new Set<string>();
+    filtered.forEach(obj => {
+      Object.keys(obj).forEach(k => keySet.add(k));
+    });
+    const allKeys = Array.from(keySet);
+    const header = allKeys;
+    const rows = filtered.map((e) => header.map(k => {
+      const obj = e as Record<string, any>;
+      if (k === "score") return `${((obj[k] ?? 0) * 100).toFixed(1)}%`;
+      return obj[k] ?? "";
+    }));
     const esc = (v: string) => {
       const s = String(v ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-      // RFC4180-safe escaping for commas, quotes, and newlines
     };
-
     const csv = [header, ...rows].map((r) => r.map(esc).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const filename = `entities_${domainSafe}_${ts}.csv`;
-
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -154,7 +160,6 @@ const Results = () => {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-
     toast.success(`Exported ${filtered.length} entities as CSV`);
   };
 
@@ -199,29 +204,23 @@ const Results = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Confidence</TableHead>
-                <TableHead>Snippet</TableHead>
-                <TableHead>Source</TableHead>
+                {filtered.length > 0 && Object.keys(filtered[0]).map((key) => (
+                  <TableHead key={key}>{key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " ")}</TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((e, i) => (
                 <TableRow key={i}>
-                  <TableCell className="font-medium">{e.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{e.type}</Badge>
-                  </TableCell>
-                  <TableCell>{(e.score * 100).toFixed(1)}%</TableCell>
-                  <TableCell className="max-w-md truncate text-muted-foreground">
-                    {e.snippet}
-                  </TableCell>
-                  <TableCell>
-                    <a href={e.url} target="_blank" className="text-primary underline" rel="noreferrer">
-                      View
-                    </a>
-                  </TableCell>
+                  {Object.keys(e).map((key) => (
+                    <TableCell key={key} className={key === "snippet" ? "max-w-md truncate text-muted-foreground" : ""}>
+                      {key === "score"
+                        ? `${((e[key] ?? 0) * 100).toFixed(1)}%`
+                        : key === "url" || key === "context_url"
+                          ? (<a href={e[key]} target="_blank" className="text-primary underline" rel="noreferrer">View</a>)
+                          : e[key] ?? ""}
+                    </TableCell>
+                  ))}
                 </TableRow>
               ))}
             </TableBody>

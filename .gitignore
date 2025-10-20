@@ -1,28 +1,66 @@
-# Python venv
+# Python
 .venv/
+venv/
+env/
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
+*.egg
 
-# Node modules (React)
+# Node modules (React/Vite)
 node_modules/
 ui/node_modules/
 ui/.next/
 ui/dist/
-build/
-npm-debug.log
+ui/build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnpm-debug.log*
 
-# Local data
+# Local data files (crawl/extraction output)
 data/pages.jsonl
 data/entities.json
 data/*.jsonl
 data/*.json
+!data/.gitkeep
 
-# IDE
+# IDE and editors
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 .DS_Store
+*.sublime-workspace
+*.sublime-project
 
-# Environment / cache
+# Environment variables and secrets
 .env
+.env.local
+.env.*.local
 *.log
+*.bak
+
+# Test and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# Deployment
+*.zip
+*.tar.gz

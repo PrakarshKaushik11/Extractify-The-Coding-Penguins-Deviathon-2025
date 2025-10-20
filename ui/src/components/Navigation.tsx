@@ -1,7 +1,10 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, Settings, Brain, BarChart3, Info } from "lucide-react";
+import { Home, Settings, Brain, BarChart3, Info, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 import penguinLogo from "@/assets/penguin-logo.png";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 
 const navItems = [
   { name: "Home", path: "/", icon: Home },
@@ -13,6 +16,23 @@ const navItems = [
 
 const Navigation = () => {
   const location = useLocation();
+  const [backendStatus, setBackendStatus] = useState<"online" | "offline" | "checking">("checking");
+
+  // Check backend health on mount and periodically
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        await api.health();
+        setBackendStatus("online");
+      } catch (error) {
+        setBackendStatus("offline");
+      }
+    };
+
+    checkHealth();
+    const interval = setInterval(checkHealth, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <nav className="glass-card border-b sticky top-0 z-50 bg-black">
@@ -25,6 +45,18 @@ const Navigation = () => {
                 Extractify
               </h1>
             </div>
+            <Badge 
+              variant="outline" 
+              className={cn(
+                "ml-2 text-xs",
+                backendStatus === "online" && "bg-green-500/20 text-green-400 border-green-500/50",
+                backendStatus === "offline" && "bg-red-500/20 text-red-400 border-red-500/50",
+                backendStatus === "checking" && "bg-yellow-500/20 text-yellow-400 border-yellow-500/50"
+              )}
+            >
+              <Activity className="w-3 h-3 mr-1" />
+              {backendStatus === "online" ? "API Online" : backendStatus === "offline" ? "API Offline" : "Checking..."}
+            </Badge>
           </Link>
           
           <div className="flex gap-1">

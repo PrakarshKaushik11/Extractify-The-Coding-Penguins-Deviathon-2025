@@ -9,11 +9,30 @@ from typing import List, Optional, Dict, Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # local modules
 from crawler.scraper import crawl_domain
 from extractor.nlp_pipeline import extract_entities
+
+# Import validators
+try:
+    from api.validators import (
+        validate_url,
+        validate_keywords,
+        validate_max_pages,
+        validate_max_depth,
+        validate_min_score,
+        ValidationError
+    )
+except ImportError:
+    # Fallback if validators module is not available
+    ValidationError = ValueError
+    def validate_url(url): return url
+    def validate_keywords(kw): return kw
+    def validate_max_pages(p): return p
+    def validate_max_depth(d): return d
+    def validate_min_score(s): return s
 
 # -----------------------
 # Logging
@@ -54,12 +73,72 @@ class CrawlRequest(BaseModel):
     keywords: Optional[List[str]] = []
     max_pages: int = 20
     max_depth: int = 2
+    
+    @field_validator('domain')
+    @classmethod
+    def validate_domain_field(cls, v):
+        """Validate URL format."""
+        try:
+            return validate_url(v)
+        except ValidationError as e:
+            raise ValueError(str(e))
+    
+    @field_validator('keywords')
+    @classmethod
+    def validate_keywords_field(cls, v):
+        """Validate and sanitize keywords."""
+        if v is None:
+            return []
+        try:
+            return validate_keywords(v)
+        except ValidationError as e:
+            raise ValueError(str(e))
+    
+    @field_validator('max_pages')
+    @classmethod
+    def validate_max_pages_field(cls, v):
+        """Validate max_pages range."""
+        try:
+            return validate_max_pages(v)
+        except ValidationError as e:
+            raise ValueError(str(e))
+    
+    @field_validator('max_depth')
+    @classmethod
+    def validate_max_depth_field(cls, v):
+        """Validate max_depth range."""
+        try:
+            return validate_max_depth(v)
+        except ValidationError as e:
+            raise ValueError(str(e))
 
 
 class ExtractRequest(BaseModel):
     keywords: Optional[List[str]] = []
     target: Optional[str] = "auto"
-    min_score: Optional[float] = 0.0
+    min_score: Optional[float] = 0.0  # kept for UI compatibility but not forwarded if extractor doesn't accept it
+    
+    @field_validator('keywords')
+    @classmethod
+    def validate_keywords_field(cls, v):
+        """Validate and sanitize keywords."""
+        if v is None:
+            return []
+        try:
+            return validate_keywords(v)
+        except ValidationError as e:
+            raise ValueError(str(e))
+    
+    @field_validator('min_score')
+    @classmethod
+    def validate_min_score_field(cls, v):
+        """Validate min_score range."""
+        if v is None:
+            return 0.0
+        try:
+            return validate_min_score(v)
+        except ValidationError as e:
+            raise ValueError(str(e))
 
 
 # -----------------------
@@ -97,7 +176,13 @@ def _write_json(path: Path, payload: Any) -> None:
 # Implementation helpers so we can expose both /api/* and top-level endpoints
 def _do_crawl(payload: CrawlRequest) -> Dict[str, Any]:
     LOG.info("Received crawl request: domain=%s pages=%s depth=%s", payload.domain, payload.max_pages, payload.max_depth)
+    # Clear previous crawl and extraction data
     try:
+        for path in [PAGES_PATH, ENTITIES_PATH]:
+            try:
+                path.write_text("", encoding="utf-8")
+            except Exception:
+                pass
         result = crawl_domain(
             domain=payload.domain,
             keywords=payload.keywords or [],
@@ -113,16 +198,17 @@ def _do_crawl(payload: CrawlRequest) -> Dict[str, Any]:
 
 
 def _do_extract(payload: ExtractRequest) -> Any:
-    LOG.info("Received extract request: target=%s keywords=%s", payload.target, payload.keywords)
+    LOG.info("Received extract request: target=%s keywords=%s min_score=%s", payload.target, payload.keywords, payload.min_score)
     if not PAGES_PATH.exists():
         raise HTTPException(status_code=400, detail="No pages found. Run /api/crawl or /crawl first.")
     try:
+        # NOTE: extractor.extract_entities historically has different signatures depending on implementation.
+        # To remain compatible we only pass the stable, core args. If your extractor supports min_score, update here.
         out = extract_entities(
             pages_path=str(PAGES_PATH),
             entities_path=str(ENTITIES_PATH),
             keywords=payload.keywords or [],
             target=payload.target or "auto",
-            min_score=payload.min_score or 0.0,
         )
         # write output if extractor returned a serializable result
         try:
@@ -154,7 +240,13 @@ def _do_results() -> List[Dict[str, Any]]:
 
 def _do_crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
     LOG.info("crawl-and-extract start: %s", payload.domain)
+    # Clear previous crawl and extraction data
     try:
+        for path in [PAGES_PATH, ENTITIES_PATH]:
+            try:
+                path.write_text("", encoding="utf-8")
+            except Exception:
+                pass
         crawl_result = _do_crawl(payload)
     except Exception as e:
         LOG.exception("crawl part failed: %s", e)

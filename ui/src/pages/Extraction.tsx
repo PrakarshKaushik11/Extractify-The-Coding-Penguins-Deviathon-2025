@@ -10,27 +10,50 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 const Extraction = () => {
+  // Clear state on unmount to prevent stale data
+  useEffect(() => {
+    return () => {
+      setEntitiesFound(0);
+      setAvgScore(0);
+      setStartTime(null);
+      setEndTime(null);
+      setLogMessages([]);
+      setProgress(0);
+      setIsRunning(false);
+    };
+  }, []);
   const navigate = useNavigate();
   const [progress, setProgress] = useState(0);
   const [isRunning, setIsRunning] = useState(true);
   const [entitiesFound, setEntitiesFound] = useState(0);
   const [avgScore, setAvgScore] = useState(0);
   const [logMessages, setLogMessages] = useState<string[]>([]);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [endTime, setEndTime] = useState<number | null>(null);
 
   // Read persisted config + last run stats
-  const crawlConfig = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("penguin:crawlConfig") || "{}"); }
-    catch { return {}; }
-  }, []);
-  const lastRun = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("penguin:lastRunStats") || "{}"); }
-    catch { return {}; }
-  }, []);
+    const crawlConfig = useMemo(() => {
+      try { return JSON.parse(localStorage.getItem("penguin:crawlConfig") || "{}"); }
+      catch { return {}; }
+    }, [localStorage.getItem("penguin:crawlConfig")]);
+    const lastRun = useMemo(() => {
+      try { return JSON.parse(localStorage.getItem("penguin:lastRunStats") || "{}"); }
+      catch { return {}; }
+    }, [localStorage.getItem("penguin:lastRunStats")]);
 
-  const totalPages = Number(crawlConfig?.max_pages ?? lastRun?.pages_scanned ?? 0);
+  // Use max_pages from config, fallback to pages_scanned from lastRun, fallback to 1
+  const totalPages = Number(crawlConfig?.max_pages) || Number(lastRun?.pages_scanned) || 1;
   const domain = (crawlConfig?.domain || lastRun?.domain || "—") as string;
 
   useEffect(() => {
+  // Reset entity count, stats, and timer at start of new crawl
+  setEntitiesFound(0);
+  setAvgScore(0);
+  setStartTime(Date.now());
+  setEndTime(null);
+  localStorage.setItem("penguin:lastRunStats", "{}");
+  localStorage.setItem("penguin:crawlDone", "0");
+
     // If the previous step already finished, don't fake-run forever.
     const alreadyDone = localStorage.getItem("penguin:crawlDone") === "1";
 
@@ -52,13 +75,14 @@ const Extraction = () => {
         if (alreadyDone) {
           setProgress(100);
           setIsRunning(false);
+          setEndTime(Date.now());
           setLogMessages(prev => [...prev, count > 0
             ? "✅ Extraction complete! Entities have been processed."
             : "ℹ️ Extraction finished. No entities were found for the given settings."
           ]);
 
           // Go to results after a short moment
-          setTimeout(() => navigate("/results", { replace: true }), 400);
+          setTimeout(() => navigate("/results", { replace: true }), 1200);
         }
       } catch (error) {
         console.error("Error fetching results:", error);
@@ -85,7 +109,7 @@ const Extraction = () => {
     checkResults();
 
     return () => clearInterval(interval);
-  }, [navigate, logMessages.length]);
+  }, [navigate, logMessages.length, totalPages]);
 
   const handleEndNow = () => {
     // Let the user jump to results at any time
@@ -123,9 +147,15 @@ const Extraction = () => {
         />
         <StatCard
           title="Processing Time"
-          value={`${(progress / 10).toFixed(1)}s`}
+          value={
+            startTime && endTime
+              ? `${((endTime - startTime) / 1000).toFixed(1)}s`
+              : isRunning && startTime
+                ? `${(((Date.now() - startTime) / 1000).toFixed(1))}s`
+                : "0.0s"
+          }
           icon={Clock}
-          trend="Estimated completion"
+          trend="Actual duration"
           glowColor="blue"
         />
       </div>
@@ -149,10 +179,7 @@ const Extraction = () => {
 
         <p className="text-muted-foreground mb-6">
           {isRunning
-            ? `Analyzing page ${Math.min(
-                totalPages,
-                Math.max(0, Math.round((progress / 100) * totalPages))
-              )}/${totalPages} using SentenceTransformer and Zero-shot classification...`
+            ? `Analyzing page ${Math.max(1, Math.round((progress / 100) * totalPages))}/${totalPages} using AI models...`
             : "All entities have been extracted and scored (if any were found)."}
         </p>
 
