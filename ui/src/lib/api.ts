@@ -61,36 +61,63 @@ async function fetchJSON(input: string, init?: RequestInit, retries = 2) {
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const base = await resolveApiBase();
-      const url = input.startsWith("http") ? input : `${base}${input.startsWith("/") ? input : "/" + input}`;
-      const res = await fetch(url, {
-        ...init
-        // No timeout signal
-      });
-      
-      let payload: any = null;
+      const primaryBase = await resolveApiBase();
+      const fallbackBase = ((rawEnv && rawEnv.length > 0 ? rawEnv : RENDER_BACKEND).replace(/\/+$/, "")) + "/api";
+
+      const buildUrl = (base: string) => input.startsWith("http") ? input : `${base}${input.startsWith("/") ? input : "/" + input}`;
+
+      // Attempt 1: primary base
+      const attemptOnce = async (base: string) => {
+        const url = buildUrl(base);
+        const res = await fetch(url, {
+          ...init
+        });
+
+        const contentType = res.headers.get("content-type") || "";
+        const text = await res.text();
+
+        let payload: any = null;
+        try {
+          payload = text ? JSON.parse(text) : null;
+        } catch (parseError) {
+          // HTML or non-JSON response
+          if (contentType.includes("text/html") || (text && text.trim().startsWith("<"))) {
+            throw new Error(res.ok ? "HTML response instead of JSON" : `${res.status} ${res.statusText}`);
+          }
+          // keep payload null; error will be thrown by !res.ok
+        }
+
+        if (!res.ok) {
+          const detail =
+            payload?.detail ||
+            payload?.message ||
+            (res.status === 404 ? "Endpoint not found. Make sure the backend API is running." :
+             res.status === 500 ? "Internal server error. Check backend logs." :
+             res.status === 503 ? "Service unavailable. Backend may be starting up." :
+             `${res.status} ${res.statusText}`) ||
+            "Request failed";
+          throw new Error(detail);
+        }
+
+        return payload;
+      };
 
       try {
-        const text = await res.text();
-        payload = text ? JSON.parse(text) : null;
-      } catch (parseError) {
-        // ignore parse errors, payload stays null
-        console.warn("Failed to parse response:", parseError);
+        return await attemptOnce(primaryBase);
+      } catch (e) {
+        // If primary was same-origin '/api', try fallback once before retry loop
+        if (primaryBase === "/api") {
+          try {
+            const data = await attemptOnce(fallbackBase);
+            console.info("API_BASE switched to fallback for this request:", fallbackBase);
+            return data;
+          } catch (e2) {
+            lastError = e2 as Error;
+          }
+        } else {
+          lastError = e as Error;
+        }
       }
-
-      if (!res.ok) {
-        const detail =
-          payload?.detail ||
-          payload?.message ||
-          (res.status === 404 ? "Endpoint not found. Make sure the backend API is running." :
-           res.status === 500 ? "Internal server error. Check backend logs." :
-           res.status === 503 ? "Service unavailable. Backend may be starting up." :
-           `${res.status} ${res.statusText}`) ||
-          "Request failed";
-        throw new Error(detail);
-      }
-      
-      return payload;
     } catch (error) {
       lastError = error as Error;
       
