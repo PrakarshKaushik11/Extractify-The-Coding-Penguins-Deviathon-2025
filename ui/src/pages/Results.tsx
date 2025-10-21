@@ -28,6 +28,7 @@ const Results = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [entities, setEntities] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [apiReady, setApiReady] = useState(false);
   const [stats, setStats] = useState({
     totalEntities: 0,
     avgScore: "0%",
@@ -61,6 +62,30 @@ const Results = () => {
     };
   }, [crawlConfig]);
 
+  // Gate: wait for API to be ready (warmup) before polling results to avoid 502 spam
+  useEffect(() => {
+    let cancelled = false;
+
+    const ping = async () => {
+      try {
+        await api.health();
+        if (!cancelled) {
+          setApiReady(true);
+        }
+      } catch {
+        // keep waiting
+      }
+    };
+
+    // immediate try, then interval until success
+    ping();
+    const h = setInterval(() => {
+      if (!apiReady) ping();
+    }, 2000);
+
+    return () => { cancelled = true; clearInterval(h); };
+  }, [apiReady]);
+
   useEffect(() => {
     // Reset stats if new crawlConfig is detected
     setStats({
@@ -77,6 +102,7 @@ const Results = () => {
     const fetchAndUpdate = async () => {
       try {
         if (first) setIsLoading(true);
+        if (!apiReady) return; // wait for API warmup
         const data = await api.getResults();
         const arr = Array.isArray(data) ? data : [];
         if (cancelled) return;
@@ -108,8 +134,9 @@ const Results = () => {
           return next;
         });
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && apiReady) {
           console.error("Error fetching results:", error);
+          // avoid noisy toasts while API is warming up
           toast.error("Failed to load results.");
         }
       } finally {
@@ -125,7 +152,7 @@ const Results = () => {
       cancelled = true;
       clearInterval(handle);
     };
-  }, [crawlConfig, lastRun]);
+  }, [crawlConfig, lastRun, apiReady]);
 
   // Filtered view matches table + export
   const filtered: Record<string, any>[] = useMemo(() => {
