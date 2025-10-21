@@ -1,15 +1,20 @@
 // API service for connecting to the backend
 
 // Resolve base URL:
-// - production: use VITE_API_URL from environment or default to Render backend
-// - local dev: fallback to http://localhost:8001
-const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
-            (typeof window !== "undefined" && window.location.hostname === "localhost"
-               ? "http://localhost:8001"
-               : "https://extractify-backend.onrender.com");
+// - local dev: http://localhost:8001 (when running vite locally)
+// - production: prefer VITE_API_URL if provided; otherwise use same-origin with Vercel rewrites
+const rawEnv = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
+const raw = rawEnv && rawEnv.length > 0
+  ? rawEnv
+  : (isLocalhost ? "http://localhost:8001" : ""); // same-origin in prod to leverage Vercel rewrites
 
 // ensure calls go to /api prefix
-export const API_BASE = raw.replace(/\/+$/, "") + "/api";
+export const API_BASE = (raw || "").replace(/\/+$/, "") + "/api";
+if (typeof window !== "undefined") {
+  // Helpful for debugging which base is used
+  console.info("API_BASE:", API_BASE);
+}
 
 
 // ---- Types ----
