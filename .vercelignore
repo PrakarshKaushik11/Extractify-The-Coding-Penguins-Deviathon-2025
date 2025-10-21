@@ -1,0 +1,21 @@
+# Prevent Vercel from detecting the backend "api" folder as Serverless Functions
+# and ensure the deployment only includes the frontend app under /ui.
+
+# Ignore everything by default
+*
+
+# Allow these files/folders
+!.vercelignore
+!vercel.json
+!README.md
+!LICENSE
+!DEPLOYMENT.md
+!ui/**
+
+# Explicitly exclude backend and tooling from Vercel upload
+api/**
+crawler/**
+extractor/**
+data/**
+requirements.txt
+render.yaml
