@@ -96,10 +96,29 @@ curl https://extractify-backend.onrender.com/api/health
 }
 ```
 
+Also check the root and docs:
+
+```bash
+# Landing page (should render a simple HTML with links)
+curl -I https://extractify-backend.onrender.com/
+
+# API docs (Swagger UI)
+open https://extractify-backend.onrender.com/docs
+```
+
 ### 3.2 Test Frontend
 1. Open your Vercel URL: `https://extractify-xxx.vercel.app`
 2. Check that API status shows "API Online" (green badge)
 3. Navigate to Crawl Settings and try a small crawl (10-20 pages)
+
+If your frontend Root Directory is set to `ui` (recommended), ensure a `vercel.json` exists inside the `ui/` folder (already added in this repo). This enables a rewrite so relative `/api/*` requests proxy to the Render backend.
+
+Quick proxy check:
+
+```bash
+curl https://extractify-xxx.vercel.app/api/health
+# Should return the same JSON as the backend health endpoint.
+```
 
 ---
 
@@ -131,13 +150,27 @@ const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
 **Problem**: Service sleeps after 15 minutes
 - **Solution**: This is normal for free tier. First request will wake it up (cold start ~30s).
 
+**Problem**: Root URL (`/`) returns 404
+- **Solution**: The backend now includes a landing page at `/` with links to `/docs` and `/api/health`. Redeploy if you don't see it yet.
+
+**Problem**: 502 on `POST /api/crawl-and-extract`
+- **Cause**: Cold start or transient proxy error during background task startup.
+- **Solution**: Warm the service with a GET to `/api/health` first, then retry with a tiny job:
+  ```bash
+  curl -X POST https://extractify-backend.onrender.com/api/crawl-and-extract \
+    -H "Content-Type: application/json" \
+    -d '{"domain":"https://example.com","keywords":[],"max_pages":1,"max_depth":1}'
+  ```
+  Check progress via `/api/results`.
+
 ### Frontend Issues
 
 **Problem**: "API Offline" status
 - **Solution**: 
   1. Check backend is running: `https://extractify-backend.onrender.com/api/health`
   2. Verify `VITE_API_URL` environment variable in Vercel
-  3. Check CORS settings in `api/main.py`
+  3. If using relative `/api/*` calls, ensure `ui/vercel.json` exists and the Vercel Project Root Directory is set to `ui` so rewrites apply.
+  4. Check CORS settings in `api/main.py`
 
 **Problem**: Build fails
 - **Solution**: Ensure `ui/package.json` has correct build script:
