@@ -4,10 +4,14 @@
 // - local dev: http://localhost:8001 (when running vite locally)
 // - production: prefer VITE_API_URL if provided; otherwise use same-origin with Vercel rewrites
 const rawEnv = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
-const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
-const raw = rawEnv && rawEnv.length > 0
-  ? rawEnv
-  : (isLocalhost ? "http://localhost:8001" : ""); // same-origin in prod to leverage Vercel rewrites
+const isBrowser = typeof window !== "undefined";
+const isLocalhost = isBrowser && window.location.hostname === "localhost";
+
+// Prefer same-origin in production to leverage Vercel rewrites and avoid CORS.
+// Only use explicit URL when running on localhost (dev) or when not in a browser context.
+const raw = isLocalhost
+  ? (rawEnv && rawEnv.length > 0 ? rawEnv : "http://localhost:8001")
+  : (isBrowser ? "" : (rawEnv || ""));
 
 // ensure calls go to /api prefix
 export const API_BASE = (raw || "").replace(/\/+$/, "") + "/api";
