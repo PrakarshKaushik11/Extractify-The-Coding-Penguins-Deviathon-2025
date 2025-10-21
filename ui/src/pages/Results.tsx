@@ -70,32 +70,61 @@ const Results = () => {
       pagesAnalyzed: 0,
     });
     setEntities([]);
-    const fetchResults = async () => {
+
+    let cancelled = false;
+    let first = true;
+
+    const fetchAndUpdate = async () => {
       try {
-        setIsLoading(true);
+        if (first) setIsLoading(true);
         const data = await api.getResults();
         const arr = Array.isArray(data) ? data : [];
-        setEntities(arr);
-        // Compute stats
-        const avgScore = arr.length > 0 ? arr.reduce((sum, e) => sum + (e.score || 0), 0) / arr.length : 0;
-        setStats({
-          totalEntities: arr.length,
-          avgScore: `${(avgScore * 100).toFixed(1)}%`,
-          entityTypes: new Set(arr.map((e) => e.type)).size,
-          pagesAnalyzed:
-            Number(lastRun?.pages_scanned ?? 0) || Number(crawlConfig?.max_pages ?? 0) || 0,
+        if (cancelled) return;
+
+        // Only update state if values actually changed
+        setEntities(prev => {
+          const prevLen = prev?.length || 0;
+          if (prevLen === arr.length) return prev; // avoid re-render spam
+          return arr;
         });
-        if (arr.length === 0) {
-          toast.info("No entities found for this run.");
-        }
+
+        const avgScoreNum = arr.length > 0 ? arr.reduce((sum, e) => sum + (e.score || 0), 0) / arr.length : 0;
+        setStats(prev => {
+          const next = {
+            totalEntities: arr.length,
+            avgScore: `${(avgScoreNum * 100).toFixed(1)}%`,
+            entityTypes: new Set(arr.map((e) => e.type)).size,
+            pagesAnalyzed:
+              Number(lastRun?.pages_scanned ?? 0) || Number(crawlConfig?.max_pages ?? 0) || 0,
+          };
+          if (
+            prev.totalEntities === next.totalEntities &&
+            prev.avgScore === next.avgScore &&
+            prev.entityTypes === next.entityTypes &&
+            prev.pagesAnalyzed === next.pagesAnalyzed
+          ) {
+            return prev;
+          }
+          return next;
+        });
       } catch (error) {
-        console.error("Error fetching results:", error);
-        toast.error("Failed to load results.");
+        if (!cancelled) {
+          console.error("Error fetching results:", error);
+          toast.error("Failed to load results.");
+        }
       } finally {
-        setIsLoading(false);
+        if (first) setIsLoading(false);
+        first = false;
       }
     };
-    fetchResults();
+
+    // Kick once immediately, then poll
+    fetchAndUpdate();
+    const handle = setInterval(fetchAndUpdate, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
   }, [crawlConfig, lastRun]);
 
   // Filtered view matches table + export

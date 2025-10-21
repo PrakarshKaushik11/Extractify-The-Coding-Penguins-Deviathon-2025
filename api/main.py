@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
@@ -342,15 +342,32 @@ def results() -> List[Dict[str, Any]]:
 
 # Crawl-and-extract convenience endpoint
 @app.post("/api/crawl-and-extract")
-def api_crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
+def api_crawl_and_extract(payload: CrawlRequest, background_tasks: BackgroundTasks) -> Dict[str, Any]:
+    """Start crawl-and-extract as a background task and return immediately."""
+    LOG.info("crawl-and-extract request received: %s", payload.domain)
+    
+    # Clear previous data immediately
     try:
-        return _do_crawl_and_extract(payload)
-    except HTTPException:
-        raise
+        for path in [PAGES_PATH, ENTITIES_PATH]:
+            try:
+                path.write_text("", encoding="utf-8")
+            except Exception:
+                pass
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        LOG.warning("Failed to clear data files: %s", e)
+    
+    # Run crawl-and-extract in background
+    background_tasks.add_task(_do_crawl_and_extract, payload)
+    
+    return {
+        "status": "started",
+        "message": "Crawl and extraction started in background",
+        "domain": payload.domain,
+        "max_pages": payload.max_pages,
+        "max_depth": payload.max_depth
+    }
 
 
 @app.post("/crawl-and-extract")
-def crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
-    return api_crawl_and_extract(payload)
+def crawl_and_extract(payload: CrawlRequest, background_tasks: BackgroundTasks) -> Dict[str, Any]:
+    return api_crawl_and_extract(payload, background_tasks)
