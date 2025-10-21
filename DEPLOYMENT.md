@@ -192,6 +192,7 @@ const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
   render.yaml
   ```
   After pushing, redeploy the frontend in Vercel and re-check: `https://your-frontend.vercel.app/api/health` should now return the backend JSON.
+  Additionally, this repo includes a secondary rewrite at `/backend/:path*` that proxies to the same backend. If `/api/*` remains reserved by Vercel on your project, verify via: `https://your-frontend.vercel.app/backend/health`.
 
 **Problem**: Build fails
 - **Solution**: Ensure `ui/package.json` has correct build script:
