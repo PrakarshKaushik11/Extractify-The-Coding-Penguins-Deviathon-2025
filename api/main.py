@@ -7,10 +7,12 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
 
 # local modules
 from crawler.scraper import crawl_domain
@@ -56,6 +58,19 @@ app = FastAPI(
     title="Extractify — The Coding Penguins Project (Deviathon 2025)",
     version="1.0.0"
 )
+
+# Custom CORS middleware to ensure headers are always present
+class CORSHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+
+# Add custom CORS middleware first
+app.add_middleware(CORSHeadersMiddleware)
 
 # Allow all origins for now (use specific origins in production)
 app.add_middleware(
