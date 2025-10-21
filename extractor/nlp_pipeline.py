@@ -215,73 +215,96 @@ def extract_entities(
 ) -> Dict[str, object]:
     """
     Flexible extractor for any site + any keyword(s) (or none).
-    Reads JSONL from pages_path; writes JSON to entities_path.
+    Reads JSONL from pages_path; incrementally writes JSON array to entities_path.
+
+    Behavior change: entities_path is updated after each processed page so that the
+    frontend can poll /api/results and see results grow in real time.
     """
     kw = _keywords_list(keywords)
 
-    # Read crawled pages
-    pages: list[dict] = []
+    # Prepare output file (empty JSON array) for incremental updates
+    os.makedirs(os.path.dirname(entities_path), exist_ok=True)
+    try:
+        with open(entities_path, "w", encoding="utf-8") as f:
+            json.dump([], f)
+    except Exception:
+        pass
+
+    # De-dup store across pages
+    best: dict[tuple, dict] = {}
+    pages_scanned = 0
+    first_page_url = ""
+
+    def _emit_entities():
+        # materialize current best set as sorted list and persist to file
+        entities_list = [
+            {
+                "name": c["name"],
+                "type": c.get("title") or "Person",
+                "url": c.get("context_url"),
+                "snippet": c.get("snippet"),
+                "score": round(float(c["_score"]), 3),
+                "phone": c.get("phone"),
+                "address": c.get("address"),
+                "passing_year": c.get("passing_year"),
+            }
+            for c in sorted(best.values(), key=lambda x: x["_score"], reverse=True)
+        ]
+        try:
+            with open(entities_path, "w", encoding="utf-8") as f:
+                json.dump(entities_list, f, ensure_ascii=False, indent=2)
+        except Exception:
+            # ignore transient IO errors and continue
+            pass
+        return entities_list
+
+    # Stream pages one by one
     with open(pages_path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             try:
-                pages.append(json.loads(line))
+                p = json.loads(line)
             except Exception:
                 continue
 
-    # Build candidates and score
-    cands: list[dict] = []
-    for p in pages:
-        txt = p.get("text") or ""
-        url = p.get("url") or ""
-        if not txt:
-            continue
-        for c in _extract_candidates_from_page(txt, url):
-            c["_score"] = _score_candidate(c, kw)
-            # Only keep candidates with semantic score > 0.15 if keywords are provided
-            if kw and _semantic_score((c.get("title") or "") + " " + (c.get("snippet") or ""), kw) < 0.15:
+            txt = p.get("text") or ""
+            url = p.get("url") or ""
+            if not first_page_url and url:
+                first_page_url = url
+            if not txt:
+                pages_scanned += 1
                 continue
-            cands.append(c)
 
-    # De-duplicate by (name, title, url), keeping best
-    best: dict[tuple, dict] = {}
-    for c in cands:
-        key = (c["name"].lower(), (c.get("title") or "").lower(), c.get("context_url") or "")
-        if key not in best or c["_score"] > best[key]["_score"]:
-            best[key] = c
+            # build candidates for this page
+            for c in _extract_candidates_from_page(txt, url):
+                c["_score"] = _score_candidate(c, kw)
+                if kw and _semantic_score((c.get("title") or "") + " " + (c.get("snippet") or ""), kw) < 0.15:
+                    continue
+                key = (c["name"].lower(), (c.get("title") or "").lower(), c.get("context_url") or "")
+                if key not in best or c["_score"] > best[key]["_score"]:
+                    best[key] = c
 
-    entities = [
-        {
-            "name": c["name"],
-            "type": c.get("title") or "Person",
-            "url": c.get("context_url"),
-            "snippet": c.get("snippet"),
-            "score": round(float(c["_score"]), 3),
-            "phone": c.get("phone"),
-            "address": c.get("address"),
-            "passing_year": c.get("passing_year"),
-        }
-        for c in sorted(best.values(), key=lambda x: x["_score"], reverse=True)
-    ]
+            pages_scanned += 1
+            # Persist after each page to support real-time UI
+            _emit_entities()
 
-    os.makedirs(os.path.dirname(entities_path), exist_ok=True)
-    with open(entities_path, "w", encoding="utf-8") as f:
-        json.dump(entities, f, ensure_ascii=False, indent=2)
+    # Final materialization
+    entities = _emit_entities()
 
-    # infer domain
+    # infer domain from first page
     domain = ""
     try:
         from urllib.parse import urlparse
-        if pages:
-            domain = urlparse(pages[0].get("url", "")).netloc
+        if first_page_url:
+            domain = urlparse(first_page_url).netloc
     except Exception:
         pass
 
     return {
         "domain": f"https://{domain}" if domain else "",
-        "pages_scanned": len(pages),
+        "pages_scanned": pages_scanned,
         "entities": entities,
         "entities_count": len(entities),
     }

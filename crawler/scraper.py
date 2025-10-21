@@ -155,65 +155,78 @@ def crawl_domain(
     delay = _delay_ms() / 1000.0
     kw = [k.strip().lower() for k in (keywords or []) if k and k.strip()]
 
-    while queue and len(pages) < max_pages:
-        url, depth = queue.popleft()
-        if url in seen:
-            continue
-        seen.add(url)
+    # Prepare output file for incremental writes
+    # Clear/overwrite file and stream each page as JSONL as soon as it's fetched
+    f = open(out_path, "w", encoding="utf-8")
+    try:
+        while queue and len(pages) < max_pages:
+            url, depth = queue.popleft()
+            if url in seen:
+                continue
+            seen.add(url)
 
-        if depth > max_depth:
-            continue
-        if not _same_site(url, root):
-            continue
-        if not _robots_allowed(root, url):
-            continue
-
-        resp = _fetch(session, url)
-        if not resp:
-            continue
-
-        html = resp.text
-        title = None
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-            if soup.title and soup.title.string:
-                title = soup.title.string.strip()
-        except Exception:
-            pass
-
-        text = _clean_text(html)
-        pages.append(Page(url=url, title=title, text=text))
-
-        # ✅ PRIORITIZE relevant links; don't block exploration
-        body_low = ((title or "") + " " + text[:4000]).lower()
-        for link in _extract_links(url, html):
-            if link in seen or not _same_site(link, root):
+            if depth > max_depth:
+                continue
+            if not _same_site(url, root):
+                continue
+            if not _robots_allowed(root, url):
                 continue
 
-            prioritized = False
-            if PRIORITY_HINTS.search(link):
-                prioritized = True
-            elif kw and any(k in link.lower() for k in kw):
-                prioritized = True
-            elif kw and any(k in body_low for k in kw):
-                prioritized = True
+            resp = _fetch(session, url)
+            if not resp:
+                continue
 
-            if prioritized:
-                queue.appendleft((link, depth + 1))   # explore sooner
-            else:
-                queue.append((link, depth + 1))
+            html = resp.text
+            title = None
+            try:
+                soup = BeautifulSoup(html, "html.parser")
+                if soup.title and soup.title.string:
+                    title = soup.title.string.strip()
+            except Exception:
+                pass
 
-        if delay > 0:
-            time.sleep(delay)
+            text = _clean_text(html)
+            page = Page(url=url, title=title, text=text)
+            pages.append(page)
 
-        # soft stop if the site is a link farm
-        if len(seen) > max_pages * 8:
-            break
+            # write this page immediately (incremental persistence)
+            try:
+                f.write(json.dumps({"url": page.url, "title": page.title, "text": page.text}, ensure_ascii=False) + "\n")
+                f.flush()
+            except Exception:
+                # don't crash the crawler on IO hiccups
+                LOG.warning("Failed to append page to %s", out_path)
 
-    # Write output
-    with open(out_path, "w", encoding="utf-8") as f:
-        for p in pages:
-            f.write(json.dumps({"url": p.url, "title": p.title, "text": p.text}, ensure_ascii=False) + "\n")
+            # ✅ PRIORITIZE relevant links; don't block exploration
+            body_low = ((title or "") + " " + text[:4000]).lower()
+            for link in _extract_links(url, html):
+                if link in seen or not _same_site(link, root):
+                    continue
+
+                prioritized = False
+                if PRIORITY_HINTS.search(link):
+                    prioritized = True
+                elif kw and any(k in link.lower() for k in kw):
+                    prioritized = True
+                elif kw and any(k in body_low for k in kw):
+                    prioritized = True
+
+                if prioritized:
+                    queue.appendleft((link, depth + 1))   # explore sooner
+                else:
+                    queue.append((link, depth + 1))
+
+            if delay > 0:
+                time.sleep(delay)
+
+            # soft stop if the site is a link farm
+            if len(seen) > max_pages * 8:
+                break
+    finally:
+        try:
+            f.close()
+        except Exception:
+            pass
 
     elapsed = round(time.time() - start, 2)
     LOG.info("Crawl done: %s pages, elapsed=%ss -> %s", len(pages), elapsed, out_path)
