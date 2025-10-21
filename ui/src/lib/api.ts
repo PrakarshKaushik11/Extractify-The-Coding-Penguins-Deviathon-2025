@@ -1,23 +1,43 @@
 // API service for connecting to the backend
 
-// Resolve base URL:
-// - local dev: http://localhost:8001 (when running vite locally)
-// - production: prefer VITE_API_URL if provided; otherwise use same-origin with Vercel rewrites
+// Resolve API base dynamically at runtime with fallback logic:
+// - In browser on localhost: use http://localhost:8001/api (dev)
+// - In browser in production: try same-origin /api first (Vercel rewrites), else fall back to VITE_API_URL or Render URL
+// - In non-browser/SSR: use VITE_API_URL or Render URL
 const rawEnv = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
 const isBrowser = typeof window !== "undefined";
 const isLocalhost = isBrowser && window.location.hostname === "localhost";
+const RENDER_BACKEND = "https://extractify-backend.onrender.com";
 
-// Prefer same-origin in production to leverage Vercel rewrites and avoid CORS.
-// Only use explicit URL when running on localhost (dev) or when not in a browser context.
-const raw = isLocalhost
-  ? (rawEnv && rawEnv.length > 0 ? rawEnv : "http://localhost:8001")
-  : (isBrowser ? "" : (rawEnv || ""));
+let resolvedBasePromise: Promise<string> | null = null;
 
-// ensure calls go to /api prefix
-export const API_BASE = (raw || "").replace(/\/+$/, "") + "/api";
-if (typeof window !== "undefined") {
-  // Helpful for debugging which base is used
-  console.info("API_BASE:", API_BASE);
+async function resolveApiBase(): Promise<string> {
+  if (resolvedBasePromise) return resolvedBasePromise;
+  resolvedBasePromise = (async () => {
+    if (isBrowser) {
+      if (isLocalhost) {
+        // Dev server
+        return ((rawEnv && rawEnv.length > 0 ? rawEnv : "http://localhost:8001").replace(/\/+$/, "")) + "/api";
+      }
+      // Production in browser: prefer same-origin /api (rewrites)
+      try {
+        const res = await fetch("/api/health", { method: "GET" });
+        if (res.ok) {
+          console.info("API_BASE: /api (via rewrite)");
+          return "/api";
+        }
+      } catch {
+        // ignore and fall back
+      }
+      const fallback = (rawEnv && rawEnv.length > 0 ? rawEnv : RENDER_BACKEND).replace(/\/+$/, "") + "/api";
+      console.info("API_BASE fallback:", fallback);
+      return fallback;
+    }
+    // Non-browser contexts (SSR/tests)
+    const base = (rawEnv || RENDER_BACKEND).replace(/\/+$/, "") + "/api";
+    return base;
+  })();
+  return resolvedBasePromise;
 }
 
 
@@ -41,7 +61,9 @@ async function fetchJSON(input: string, init?: RequestInit, retries = 2) {
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(input, {
+      const base = await resolveApiBase();
+      const url = input.startsWith("http") ? input : `${base}${input.startsWith("/") ? input : "/" + input}`;
+      const res = await fetch(url, {
         ...init
         // No timeout signal
       });
@@ -90,11 +112,11 @@ async function fetchJSON(input: string, init?: RequestInit, retries = 2) {
 // ---- API functions ----
 export const api = {
   // Health check
-  health: async () => fetchJSON(`${API_BASE}/health`),
+  health: async () => fetchJSON(`/health`),
 
   // Crawl a domain
   crawl: async (payload: CrawlRequest) =>
-    fetchJSON(`${API_BASE}/crawl`, {
+    fetchJSON(`/crawl`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -102,18 +124,18 @@ export const api = {
 
   // Extract entities
   extract: async (payload: ExtractRequest = {}) =>
-    fetchJSON(`${API_BASE}/extract`, {
+    fetchJSON(`/extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
 
   // Get results
-  getResults: async () => fetchJSON(`${API_BASE}/results`),
+  getResults: async () => fetchJSON(`/results`),
 
   // Crawl and extract in one call
   crawlAndExtract: async (payload: CrawlRequest) =>
-    fetchJSON(`${API_BASE}/crawl-and-extract`, {
+    fetchJSON(`/crawl-and-extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
