@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
@@ -280,6 +281,43 @@ def _do_crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
 # -----------------------
 # Routes (both /api/* and top-level duplicates)
 # -----------------------
+@app.get("/", include_in_schema=False)
+def root() -> HTMLResponse:
+        """Simple landing page to avoid 404 at service root."""
+        html = (
+                """
+                <!doctype html>
+                <html lang="en">
+                <head>
+                    <meta charset="utf-8" />
+                    <meta name="viewport" content="width=device-width, initial-scale=1" />
+                    <title>Extractify API</title>
+                    <style>
+                        body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;line-height:1.5;padding:2rem;max-width:720px;margin:auto}
+                        code{background:#f4f4f5;padding:.2rem .4rem;border-radius:.25rem}
+                        a{color:#2563eb;text-decoration:none}
+                        a:hover{text-decoration:underline}
+                    </style>
+                </head>
+                <body>
+                    <h1>Extractify — Backend API</h1>
+                    <p>Welcome! This is the backend service. Useful links:</p>
+                    <ul>
+                        <li><a href="/docs">Swagger UI</a> (<code>/docs</code>)</li>
+                        <li><a href="/api/health">Health</a> (<code>/api/health</code>)</li>
+                        <li>Results: <code>/api/results</code></li>
+                        <li>Crawl+Extract: <code>POST /api/crawl-and-extract</code></li>
+                    </ul>
+                </body>
+                </html>
+                """
+        )
+        return HTMLResponse(content=html)
+
+@app.get("/api", include_in_schema=False)
+def api_root() -> RedirectResponse:
+        """Redirect bare /api to the interactive docs for convenience."""
+        return RedirectResponse(url="/docs")
 @app.get("/api/health")
 def api_health() -> Dict[str, Any]:
     return {
