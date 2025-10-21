@@ -271,7 +271,34 @@ Extractify/
 
 ---
 
-## 🐛 Troubleshooting
+## � Deployment
+
+**Extractify** is production-ready and can be deployed using free hosting services.
+
+### Quick Deployment Guide
+
+**Frontend**: Deploy on **Vercel** (Free tier)  
+**Backend**: Deploy on **Render** (Free tier)
+
+📘 **[Complete Deployment Guide](DEPLOYMENT.md)** — Step-by-step instructions for deploying to production.
+
+### Deployed Links (Example)
+- **Frontend**: https://extractify-xxx.vercel.app
+- **Backend API**: https://extractify-backend.onrender.com
+- **API Docs**: https://extractify-backend.onrender.com/docs
+
+### Deployment Features
+- ✅ One-click deployment from GitHub
+- ✅ Automatic HTTPS/SSL certificates
+- ✅ Continuous deployment (auto-deploy on git push)
+- ✅ Free tier includes 100GB bandwidth (Vercel) + 750 hours/month (Render)
+- ✅ Memory-optimized for 512MB RAM (Render free tier)
+
+For detailed deployment instructions, see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
+---
+
+## �🐛 Troubleshooting
 
 ### Backend won't start
 - Ensure Python 3.11+ is installed: `python --version`
@@ -293,6 +320,11 @@ Extractify/
 - Ensure keywords are relevant to the target domain
 - Try broader keywords or remove keywords entirely
 - Check if the crawled pages contain actual content (not just navigation)
+
+### Deployment Issues
+- See **[DEPLOYMENT.md](DEPLOYMENT.md)** for comprehensive troubleshooting
+- Check backend health: `https://your-backend.onrender.com/api/health`
+- Verify environment variables in Vercel/Render dashboard
 
 ---
 

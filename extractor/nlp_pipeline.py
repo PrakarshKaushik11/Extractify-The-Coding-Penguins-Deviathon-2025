@@ -17,12 +17,19 @@ except Exception:
     download("en_core_web_sm")
     nlp = spacy.load("en_core_web_sm")
 
-# Optional: local semantic model (keeps you fully offline if already present)
-try:
-    from sentence_transformers import SentenceTransformer, util as st_util
-    _st_model = SentenceTransformer("all-MiniLM-L6-v2")
-except Exception:
-    _st_model = None
+# Optional: local semantic model (lazy loading for memory efficiency)
+_st_model = None
+
+def _get_st_model():
+    """Lazy load SentenceTransformer model only when needed"""
+    global _st_model
+    if _st_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _st_model = SentenceTransformer("all-MiniLM-L6-v2")
+        except Exception:
+            pass
+    return _st_model
 
 
 # ---------------- utilities ----------------
@@ -39,10 +46,13 @@ def _semantic_score(text: str, keywords: list[str]) -> float:
     """
     if not text or not keywords:
         return 0.0
-    if _st_model:
+    
+    model = _get_st_model()
+    if model:
         try:
-            t_emb = _st_model.encode([text], normalize_embeddings=True)
-            k_emb = _st_model.encode(["; ".join(keywords)], normalize_embeddings=True)
+            from sentence_transformers import util as st_util
+            t_emb = model.encode([text], normalize_embeddings=True)
+            k_emb = model.encode(["; ".join(keywords)], normalize_embeddings=True)
             sim = float(st_util.cos_sim(t_emb, k_emb)[0][0])  # [-1, 1]
             return max(0.0, min(1.0, (sim + 1.0) / 2.0))
         except Exception:

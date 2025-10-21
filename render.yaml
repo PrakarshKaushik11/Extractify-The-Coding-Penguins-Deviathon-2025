@@ -1,0 +1,21 @@
+services:
+  # Backend API Service
+  - type: web
+    name: extractify-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: "pip install -r requirements.txt && python -m spacy download en_core_web_sm"
+    startCommand: "uvicorn api.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.6
+      - key: CP_IGNORE_ROBOTS
+        value: 0
+      - key: CP_REQUEST_DELAY_MS
+        value: 300
+      - key: CP_TIMEOUT_SEC
+        value: 25
+      - key: CP_MAX_RETRIES
+        value: 2
+    healthCheckPath: /api/health
