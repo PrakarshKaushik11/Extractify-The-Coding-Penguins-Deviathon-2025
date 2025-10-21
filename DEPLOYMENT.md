@@ -172,6 +172,27 @@ const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
   3. If using relative `/api/*` calls, ensure `ui/vercel.json` exists and the Vercel Project Root Directory is set to `ui` so rewrites apply.
   4. Check CORS settings in `api/main.py`
 
+**Problem**: `https://your-frontend.vercel.app/api/health` returns 404 NOT_FOUND (rewrites not applied)
+- **Cause**: Vercel treats any top-level `api/` folder as Serverless Functions. If your project root is the repo root, Vercel will see the backend folder `api/` (FastAPI code) and shadow your rewrites, so `/api/*` routes won’t be proxied.
+- **Fix Option A (recommended)**: In Vercel → Project Settings → General, set **Root Directory** to `ui` (monorepo style). Redeploy. The `ui/vercel.json` rewrites will now apply and `/api/*` will proxy to Render.
+- **Fix Option B (code-only)**: Keep root directory at repository root but add a `.vercelignore` file that excludes the backend and non-UI files from the deployment. This repo includes one already:
+  ```
+  *
+  !.vercelignore
+  !vercel.json
+  !README.md
+  !LICENSE
+  !DEPLOYMENT.md
+  !ui/**
+  api/**
+  crawler/**
+  extractor/**
+  data/**
+  requirements.txt
+  render.yaml
+  ```
+  After pushing, redeploy the frontend in Vercel and re-check: `https://your-frontend.vercel.app/api/health` should now return the backend JSON.
+
 **Problem**: Build fails
 - **Solution**: Ensure `ui/package.json` has correct build script:
   ```json
