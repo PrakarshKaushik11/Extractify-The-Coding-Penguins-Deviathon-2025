@@ -9,6 +9,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://extractify-backend.onrender.com/api/:path*"
+    },
+    {
+      "source": "/backend/:path*",
+      "destination": "https://extractify-backend.onrender.com/api/:path*"
     }
   ],
   "headers": [

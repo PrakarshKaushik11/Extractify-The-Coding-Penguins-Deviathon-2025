@@ -19,7 +19,7 @@ async function resolveApiBase(): Promise<string> {
         // Dev server
         return ((rawEnv && rawEnv.length > 0 ? rawEnv : "http://localhost:8001").replace(/\/+$/, "")) + "/api";
       }
-      // Production in browser: prefer same-origin /api (rewrites)
+      // Production in browser: try same-origin /api first (rewrites), then /backend as a safe proxy path
       try {
         const res = await fetch("/api/health", { method: "GET" });
         if (res.ok) {
@@ -27,7 +27,16 @@ async function resolveApiBase(): Promise<string> {
           return "/api";
         }
       } catch {
-        // ignore and fall back
+        // ignore and try /backend next
+      }
+      try {
+        const res2 = await fetch("/backend/health", { method: "GET" });
+        if (res2.ok) {
+          console.info("API_BASE: /backend (via rewrite)");
+          return "/backend";
+        }
+      } catch {
+        // ignore and fall back to absolute URL
       }
       const fallback = (rawEnv && rawEnv.length > 0 ? rawEnv : RENDER_BACKEND).replace(/\/+$/, "") + "/api";
       console.info("API_BASE fallback:", fallback);
