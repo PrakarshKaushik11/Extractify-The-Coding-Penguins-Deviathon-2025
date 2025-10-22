@@ -72,8 +72,11 @@ This project focuses on **domain-specific entity extraction** using a hybrid app
 | 🕷️ **Automated Web Crawling** | Custom-built breadth-first crawler with link filtering and keyword-based targeting. |
 | 🧠 **AI Entity Extraction** | Combines **spaCy**, regex, and zero-shot learning for high-accuracy entity recognition. |
 | ⚡ **Offline Execution** | Works completely locally — no external API calls or internet AI dependencies. |
-| 📊 **Structured Output** | Exports entities into **JSON format** for further use or integration. |
+| 📊 **Structured Output** | Exports entities into **JSON/CSV format** for further use or integration. |
 | 💻 **Interactive UI** | Modern React + Tailwind dashboard to monitor progress and view results. |
+| 🔄 **Real-Time Sync** | Live progress tracking with backend status polling — see pages crawled and entities found as they happen. |
+| ⏸️ **Cancellable Operations** | Stop crawl/extraction mid-run with graceful backend cancellation. |
+| 📈 **Accurate Metrics** | Frontend displays actual backend metrics (pages scanned, entities found) — no fake progress bars. |
 | 🔒 **Privacy-Centric** | All crawling and extraction happens locally on your machine. |
 
 ---
@@ -133,11 +136,17 @@ cd "Extractify - The Coding Penguins Project Deviathon 2025"
    - Add **keywords** (comma-separated, e.g., `faculty, professor, teacher`)
    - Set **max pages** (10-500) and **crawl depth** (1-5)
 5. **Click "Start Crawl"** — the system will:
-   - Crawl the domain and collect pages
-   - Extract entities using AI/NLP
-   - Display real-time progress
-6. **View Results** — see extracted entities in a dynamic table
-7. **Export Data** — download results as CSV or JSON
+   - Start crawling in the background (no blocking)
+   - Automatically navigate to the Extraction page
+   - Show real-time progress as pages are crawled
+   - Display entities as they're extracted (incremental updates)
+6. **Monitor Progress** on the Extraction page:
+   - See live entity count updates
+   - Watch pages being processed
+   - View actual backend metrics (not fake progress bars)
+   - Click "End Extraction" to cancel if needed
+7. **View Results** — see extracted entities in a dynamic table with accurate page counts
+8. **Export Data** — download results as CSV or JSON
 
 ### Tips for Best Results
 
@@ -145,6 +154,8 @@ cd "Extractify - The Coding Penguins Project Deviathon 2025"
 - Start with smaller page counts (50-100) for testing
 - Increase depth for deeper site exploration
 - Check the "AI Extraction" page for real-time progress
+- Use "End Extraction" to stop long-running crawls gracefully
+- Results are saved incrementally — safe to cancel anytime
 
 ---
 
@@ -179,8 +190,10 @@ Extractify/
 │   ├── public/              # Static assets
 │   └── package.json
 ├── data/
-│   ├── pages.jsonl          # Crawled pages (temporary)
-│   └── entities.json        # Extracted entities (output)
+│   ├── pages.jsonl          # Crawled pages (streaming JSONL format)
+│   ├── entities.json        # Extracted entities (output, updated incrementally)
+│   ├── status.json          # Backend status tracking (phase, timestamps, counts)
+│   └── cancel.flag          # Cancel signal file (created by /api/cancel)
 ├── requirements.txt         # Python dependencies
 ├── .env                     # Environment variables
 ├── .gitignore              # Git ignore rules
@@ -229,14 +242,25 @@ Extractify/
 - **Regex patterns** for phone numbers, addresses, years
 - **Duplicate detection and merging**
 - **Confidence scoring** for each entity
+- **Incremental persistence** — entities saved as they're extracted (not just at the end)
 
 ### 💻 Modern Web Interface
 - **Responsive design** with Tailwind CSS
-- **Real-time progress tracking** during crawl/extraction
+- **Real-time progress tracking** during crawl/extraction with backend status polling
+- **Live entity count updates** — see results appear as they're extracted
+- **Cancellable operations** — "End Extraction" button stops backend processing gracefully
+- **Accurate metrics** — displays actual pages scanned from backend (not fake progress)
 - **Dynamic table rendering** based on extracted fields
 - **CSV/JSON export** capabilities
 - **Stats dashboard** with entity counts and metrics
 - **Dark theme** for comfortable viewing
+
+### 🔄 Backend Status & Control
+- **Status endpoint** (`/api/status`) — Real-time phase tracking (crawling → extracting → completed/cancelled)
+- **Cancel endpoint** (`/api/cancel`) — Gracefully stop running operations
+- **Cooperative cancellation** — Crawler and extractor check cancel flag and stop between pages
+- **Persistent status** — Status survives across requests via `data/status.json`
+- **Phase timestamps** — Track when each phase started/completed
 
 ---
 
@@ -320,6 +344,17 @@ For detailed deployment instructions, see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 - Ensure keywords are relevant to the target domain
 - Try broader keywords or remove keywords entirely
 - Check if the crawled pages contain actual content (not just navigation)
+- Some domains may have 0 entities if they don't contain person/organization names
+
+### Crawl shows wrong page count
+- This has been fixed! Frontend now polls `/api/status` for accurate counts
+- If you still see mismatches, refresh the page to reload the latest code
+- Check backend status directly: `http://127.0.0.1:8001/api/status`
+
+### Can't cancel extraction
+- "End Extraction" button now calls `/api/cancel` endpoint
+- Backend stops gracefully after finishing the current page
+- If stuck, restart the backend: Stop the uvicorn job and start again
 
 ### Deployment Issues
 - See **[DEPLOYMENT.md](DEPLOYMENT.md)** for comprehensive troubleshooting
