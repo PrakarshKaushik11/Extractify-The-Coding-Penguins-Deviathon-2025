@@ -176,6 +176,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+  // Status
+  status: async () => fetchJSON(`/status`),
+  // Cancel current run
+  cancel: async () =>
+    fetchJSON(`/cancel`, {
+      method: "POST",
+    }),
 };
+
+// Export resolveApiBase for components that need to display the API URL
+export { resolveApiBase };
 
 export default api;

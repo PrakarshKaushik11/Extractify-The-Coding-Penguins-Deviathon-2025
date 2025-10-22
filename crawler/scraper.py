@@ -8,6 +8,7 @@ import logging
 from collections import deque
 from dataclasses import dataclass
 from typing import Set, Dict, Any, List, Optional
+import os
 from urllib.parse import urljoin, urlparse, urldefrag
 
 import requests
@@ -140,6 +141,7 @@ def crawl_domain(
     max_pages: int,
     max_depth: int,
     out_path: str,
+    cancel_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     BFS crawl inside a single domain. Writes JSONL lines: {"url","title","text"} to out_path.
@@ -160,6 +162,10 @@ def crawl_domain(
     f = open(out_path, "w", encoding="utf-8")
     try:
         while queue and len(pages) < max_pages:
+            # cooperative cancellation
+            if cancel_path and os.path.exists(cancel_path):
+                LOG.info("Cancel flag detected, stopping crawl early")
+                break
             url, depth = queue.popleft()
             if url in seen:
                 continue
@@ -236,4 +242,5 @@ def crawl_domain(
         "sample_urls": [p.url for p in pages[:5]],
         "elapsed": elapsed,
         "used_fallback": 0,
+        "cancelled": 1 if (cancel_path and os.path.exists(cancel_path)) else 0,
     }

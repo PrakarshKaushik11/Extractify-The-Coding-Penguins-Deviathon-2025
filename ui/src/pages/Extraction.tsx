@@ -30,6 +30,7 @@ const Extraction = () => {
   const [logMessages, setLogMessages] = useState<string[]>([]);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [endTime, setEndTime] = useState<number | null>(null);
+  const [backendPagesScanned, setBackendPagesScanned] = useState<number>(0);
 
   // Read persisted config + last run stats
     const crawlConfig = useMemo(() => {
@@ -41,8 +42,8 @@ const Extraction = () => {
       catch { return {}; }
     }, [localStorage.getItem("penguin:lastRunStats")]);
 
-  // Use max_pages from config, fallback to pages_scanned from lastRun, fallback to 1
-  const totalPages = Number(crawlConfig?.max_pages) || Number(lastRun?.pages_scanned) || 1;
+  // Use backend pages_scanned if available, otherwise fall back to config
+  const totalPages = backendPagesScanned || Number(crawlConfig?.max_pages) || Number(lastRun?.pages_scanned) || 1;
   const domain = (crawlConfig?.domain || lastRun?.domain || "—") as string;
 
   useEffect(() => {
@@ -54,13 +55,19 @@ const Extraction = () => {
   localStorage.setItem("penguin:lastRunStats", "{}");
   localStorage.setItem("penguin:crawlDone", "0");
 
-    // If the previous step already finished, don't fake-run forever.
-    const alreadyDone = localStorage.getItem("penguin:crawlDone") === "1";
+    // We'll consider run complete when backend status says completed or cancelled
 
     const checkResults = async () => {
       try {
+        // read status to detect completion/cancellation and get actual pages_scanned
+        const status = await api.status().catch(() => ({ phase: "unknown" }));
         const results = await api.getResults();
         const count = Array.isArray(results) ? results.length : 0;
+
+        // Update pages scanned from backend status
+        if (status?.pages_scanned) {
+          setBackendPagesScanned(status.pages_scanned);
+        }
 
         // Update metrics
         setEntitiesFound(count);
@@ -71,8 +78,8 @@ const Extraction = () => {
           setAvgScore(totalScore / count);
         }
 
-        // Stop running regardless of count (so 0-entity runs don't hang)
-        if (alreadyDone) {
+        // Stop when backend reports completed or cancelled (so 0-entity runs don't hang)
+        if (status?.phase === "completed" || status?.phase === "cancelled") {
           setProgress(100);
           setIsRunning(false);
           setEndTime(Date.now());
@@ -111,8 +118,13 @@ const Extraction = () => {
     return () => clearInterval(interval);
   }, [navigate, logMessages.length, totalPages]);
 
-  const handleEndNow = () => {
-    // Let the user jump to results at any time
+  const handleEndNow = async () => {
+    try {
+      await api.cancel();
+      toast.info("Cancellation requested. Finishing up...", { duration: 2000 });
+    } catch {
+      // ignore
+    }
     setIsRunning(false);
     setProgress(100);
     navigate("/results");

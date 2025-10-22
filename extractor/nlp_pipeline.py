@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import List, Dict, Iterable
+from typing import List, Dict, Iterable, Optional
+import os
 
 # ---------------- NLP setup ----------------
 import spacy
@@ -212,6 +213,7 @@ def extract_entities(
     entities_path: str,
     keywords: List[str] | None = None,
     target: str = "auto",
+    cancel_path: Optional[str] = None,
 ) -> Dict[str, object]:
     """
     Flexible extractor for any site + any keyword(s) (or none).
@@ -261,6 +263,9 @@ def extract_entities(
     # Stream pages one by one
     with open(pages_path, "r", encoding="utf-8") as f:
         for line in f:
+            # cooperative cancellation
+            if cancel_path and os.path.exists(cancel_path):
+                break
             line = line.strip()
             if not line:
                 continue
@@ -307,4 +312,5 @@ def extract_entities(
         "pages_scanned": pages_scanned,
         "entities": entities,
         "entities_count": len(entities),
+        "cancelled": 1 if (cancel_path and os.path.exists(cancel_path)) else 0,
     }

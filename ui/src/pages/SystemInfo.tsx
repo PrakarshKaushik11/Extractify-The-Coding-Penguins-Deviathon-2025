@@ -2,16 +2,19 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Cpu, HardDrive, Zap, CheckCircle2, Loader2, Server, AlertCircle } from "lucide-react";
-import { api, API_BASE } from "@/lib/api";
+import { api, resolveApiBase } from "@/lib/api";
 import { toast } from "sonner";
 
 const SystemInfo = () => {
   const [healthData, setHealthData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [apiBase, setApiBase] = useState<string>("");
 
   useEffect(() => {
     const fetchHealth = async () => {
       try {
+        const baseUrl = await resolveApiBase();
+        setApiBase(baseUrl);
         const data = await api.health();
         setHealthData(data);
       } catch (error) {
@@ -62,7 +65,7 @@ const SystemInfo = () => {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">API Endpoint</span>
-                <span className="font-semibold text-primary">{API_BASE}</span>
+                <span className="font-semibold text-primary">{apiBase}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Application</span>

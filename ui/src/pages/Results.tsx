@@ -35,6 +35,7 @@ const Results = () => {
     entityTypes: 0,
     pagesAnalyzed: 0,
   });
+  const [backendStatus, setBackendStatus] = useState<any>(null);
 
   // ...existing code...
   // ...existing code...
@@ -103,9 +104,19 @@ const Results = () => {
       try {
         if (first) setIsLoading(true);
         if (!apiReady) return; // wait for API warmup
-        const data = await api.getResults();
+        
+        // Fetch both results and status from backend
+        const [data, status] = await Promise.all([
+          api.getResults(),
+          api.status().catch(() => null),
+        ]);
+        
         const arr = Array.isArray(data) ? data : [];
         if (cancelled) return;
+
+        if (status) {
+          setBackendStatus(status);
+        }
 
         // Only update state if values actually changed
         setEntities(prev => {
@@ -120,8 +131,11 @@ const Results = () => {
             totalEntities: arr.length,
             avgScore: `${(avgScoreNum * 100).toFixed(1)}%`,
             entityTypes: new Set(arr.map((e) => e.type)).size,
-            pagesAnalyzed:
-              Number(lastRun?.pages_scanned ?? 0) || Number(crawlConfig?.max_pages ?? 0) || 0,
+            // Use actual pages_scanned from backend status if available, otherwise fall back
+            pagesAnalyzed: status?.pages_scanned || 
+                          Number(lastRun?.pages_scanned ?? 0) || 
+                          Number(crawlConfig?.max_pages ?? 0) || 
+                          0,
           };
           if (
             prev.totalEntities === next.totalEntities &&

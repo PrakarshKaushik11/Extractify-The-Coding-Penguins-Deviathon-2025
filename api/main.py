@@ -5,6 +5,7 @@ import json
 import os
 import logging
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
@@ -50,6 +51,8 @@ LOG = logging.getLogger("extractify.api")
 DATA_DIR = Path("data")
 PAGES_PATH = DATA_DIR / "pages.jsonl"
 ENTITIES_PATH = DATA_DIR / "entities.json"
+STATUS_PATH = DATA_DIR / "status.json"
+CANCEL_PATH = DATA_DIR / "cancel.flag"
 
 # -----------------------
 # FastAPI app + CORS
@@ -189,6 +192,25 @@ def _write_json(path: Path, payload: Any) -> None:
         raise
 
 
+def _read_status() -> Dict[str, Any]:
+    try:
+        if STATUS_PATH.exists():
+            return json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {"phase": "idle"}
+
+
+def _write_status(update: Dict[str, Any]) -> None:
+    try:
+        STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        current = _read_status()
+        current.update(update)
+        STATUS_PATH.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        LOG.warning("Failed to write status.json")
+
+
 # Implementation helpers so we can expose both /api/* and top-level endpoints
 def _do_crawl(payload: CrawlRequest) -> Dict[str, Any]:
     LOG.info("Received crawl request: domain=%s pages=%s depth=%s", payload.domain, payload.max_pages, payload.max_depth)
@@ -199,12 +221,20 @@ def _do_crawl(payload: CrawlRequest) -> Dict[str, Any]:
                 path.write_text("", encoding="utf-8")
             except Exception:
                 pass
+        # clear cancel flag on new run
+        try:
+            if CANCEL_PATH.exists():
+                CANCEL_PATH.unlink(missing_ok=True)
+        except Exception:
+            pass
+
         result = crawl_domain(
             domain=payload.domain,
             keywords=payload.keywords or [],
             max_pages=payload.max_pages,
             max_depth=payload.max_depth,
             out_path=str(PAGES_PATH),
+            cancel_path=str(CANCEL_PATH),
         )
         LOG.info("Crawl finished: %s", result)
         return result
@@ -225,6 +255,7 @@ def _do_extract(payload: ExtractRequest) -> Any:
             entities_path=str(ENTITIES_PATH),
             keywords=payload.keywords or [],
             target=payload.target or "auto",
+            cancel_path=str(CANCEL_PATH),
         )
         # write output if extractor returned a serializable result
         try:
@@ -263,16 +294,39 @@ def _do_crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
                 path.write_text("", encoding="utf-8")
             except Exception:
                 pass
+        # reset status + cancel
+        try:
+            if CANCEL_PATH.exists():
+                CANCEL_PATH.unlink(missing_ok=True)
+        except Exception:
+            pass
+        _write_status({
+            "phase": "crawling",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "pages_scanned": 0,
+            "entities_count": 0,
+            "completed_at": None,
+            "cancelled_at": None,
+            "error": None,
+        })
         crawl_result = _do_crawl(payload)
     except Exception as e:
         LOG.exception("crawl part failed: %s", e)
+        _write_status({"phase": "error", "error": f"Crawl error: {e}"})
         raise HTTPException(status_code=500, detail=f"Crawl error: {e}")
 
     try:
-        extract_payload = ExtractRequest(keywords=payload.keywords or [], target="auto")
-        extract_result = _do_extract(extract_payload)
+        # If cancelled during crawl, do not proceed to extract
+        if CANCEL_PATH.exists():
+            _write_status({"phase": "cancelled"})
+            extract_result = {"entities": [], "entities_count": 0, "cancelled": 1}
+        else:
+            _write_status({"phase": "extracting", "pages_scanned": crawl_result.get("pages_scanned", 0)})
+            extract_payload = ExtractRequest(keywords=payload.keywords or [], target="auto")
+            extract_result = _do_extract(extract_payload)
     except Exception as e:
         LOG.exception("extract part failed: %s", e)
+        _write_status({"phase": "error", "error": f"Extract error: {e}"})
         raise HTTPException(status_code=500, detail=f"Extract error: {e}")
 
     # persist entities if shape ok
@@ -289,6 +343,22 @@ def _do_crawl_and_extract(payload: CrawlRequest) -> Dict[str, Any]:
         crawl_result.get("pages_scanned"),
         (len(extract_result.get("entities")) if isinstance(extract_result, dict) and "entities" in extract_result else "n/a"),
     )
+
+    # compute entities_count for status and finalize phase unless cancelled
+    try:
+        ents = _do_results()
+        if not CANCEL_PATH.exists():
+            _write_status({
+                "phase": "completed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "entities_count": len(ents),
+            })
+        else:
+            _write_status({
+                "entities_count": len(ents),
+            })
+    except Exception:
+        pass
 
     return {"crawl": crawl_result, "extract": extract_result}
 
@@ -391,6 +461,23 @@ def api_results() -> List[Dict[str, Any]]:
 @app.get("/results")
 def results() -> List[Dict[str, Any]]:
     return api_results()
+
+
+# Status & Cancel
+@app.get("/api/status")
+def api_status() -> Dict[str, Any]:
+    return _read_status()
+
+
+@app.post("/api/cancel")
+def api_cancel() -> Dict[str, Any]:
+    try:
+        CANCEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CANCEL_PATH.write_text("1", encoding="utf-8")
+        _write_status({"phase": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()})
+        return {"status": "ok", "message": "Cancellation requested"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Crawl-and-extract convenience endpoint

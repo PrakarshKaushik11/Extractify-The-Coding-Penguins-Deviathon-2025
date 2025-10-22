@@ -51,22 +51,17 @@ const CrawlSettings = () => {
     localStorage.setItem("penguin:crawlDone", "0");
 
     // Redirect immediately to Extraction tab
-    navigate("/extraction");
+  navigate("/extraction");
 
     // Start crawl-and-extract in background
     try {
-      const result = await api.crawlAndExtract(payload);
-      localStorage.setItem("penguin:lastRunStats", JSON.stringify(result || {}));
-      localStorage.setItem("penguin:crawlDone", "1");
-      const entitiesCount = result?.extract?.entities?.length || 
-                           (Array.isArray(result?.extract) ? result.extract.length : 0) ||
-                           0;
-      toast.success(`Crawl completed! Found ${entitiesCount} entities.`, { duration: 4000 });
+      // This endpoint starts work in background and returns immediately
+      await api.crawlAndExtract(payload);
+      // Defer completion messaging to Extraction/Results pages which poll status/results
     } catch (error) {
       console.error("Crawl error:", error);
       const errorMsg = error instanceof Error ? error.message : "Failed to start crawl";
       toast.error(`Crawl failed: ${errorMsg}`, { duration: 5000 });
-      localStorage.setItem("penguin:crawlDone", "1");
     } finally {
       setIsLoading(false);
     }
